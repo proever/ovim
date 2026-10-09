@@ -105,28 +105,19 @@ impl TerminalSpawner for AlacrittySpawner {
         let config = SpawnConfig::new(settings, file_path, socket_path, text_is_empty, filetype)
             .with_geometry(geometry.as_ref());
 
-        // Try msg create-window first (faster, reuses existing daemon)
-        // Note: skipped when geometry is specified since msg doesn't support position
-        let spawn_result = self.try_msg_spawn(&config, custom_env)
-            .or_else(|| self.fallback_spawn(&config, custom_env));
-
-        let child = match spawn_result {
-            Some(Ok(child)) => Some(child),
-            Some(Err(e)) => return Err(e),
-            None => None,
-        };
+        // Reuse the running application, including positioned popups.
+        let child = self.spawn_window(&config, custom_env)?;
 
         // Find editor PID
         let pid = find_editor_pid_for_file(file_path, settings.editor_process_name());
         log::info!("Found editor PID: {:?} for file: {}", pid, file_path);
 
-        if geometry.is_some() && super::aerospace::float_window(&config.title) {
-            if let Some(geo) = geometry.as_ref() {
-                super::applescript_utils::set_window_bounds_by_title(
-                    &["alacritty", "Alacritty"], &config.title,
-                    geo.x, geo.y, geo.width, geo.height,
-                );
-            }
+        if let Some(geo) = geometry.as_ref() {
+            super::aerospace::float_window(&config.title);
+            super::applescript_utils::set_window_bounds_by_title(
+                &["alacritty", "Alacritty"], &config.title,
+                geo.x, geo.y, geo.width, geo.height,
+            );
         }
 
         Ok(SpawnInfo {
@@ -139,40 +130,23 @@ impl TerminalSpawner for AlacrittySpawner {
 }
 
 impl AlacrittySpawner {
-    /// Try to spawn using `alacritty msg create-window` (faster)
-    /// Note: msg create-window doesn't support window.position, so we skip it when positioning is needed
-    fn try_msg_spawn(
+    /// Reuse Alacritty's IPC server; launch a process only when IPC is unavailable.
+    fn spawn_window(
         &self,
         config: &SpawnConfig,
         custom_env: Option<&HashMap<String, String>>,
-    ) -> Option<Result<std::process::Child, String>> {
-        // Skip msg create-window when position is specified - it doesn't support window.position
-        if config.x.is_some() && config.y.is_some() {
-            log::info!("Skipping msg create-window because position is specified");
-            return None;
-        }
-
+    ) -> Result<Option<std::process::Child>, String> {
         let args = self.build_msg_args(config, custom_env);
-
         match Command::new(&config.terminal_path).args(&args).status() {
             Ok(status) if status.success() => {
                 log::info!("msg create-window succeeded");
-                None // No child process to return
+                Ok(None)
             }
             _ => {
                 log::info!("msg create-window failed, falling back to regular spawn");
-                Some(self.spawn_new_process(config, custom_env))
+                self.spawn_new_process(config, custom_env).map(Some)
             }
         }
-    }
-
-    /// Fallback: spawn a new Alacritty process
-    fn fallback_spawn(
-        &self,
-        config: &SpawnConfig,
-        custom_env: Option<&HashMap<String, String>>,
-    ) -> Option<Result<std::process::Child, String>> {
-        Some(self.spawn_new_process(config, custom_env))
     }
 
     /// Build args for msg create-window command
@@ -300,36 +274,19 @@ impl AlacrittySpawner {
             socket_path.to_string_lossy().to_string(),
         ];
 
-        // Position off-screen so the window is invisible
-        let scale = 2; // Retina
-        let offscreen_x = -10000 * scale;
-        let offscreen_y = -10000 * scale;
-
-        let mut args = vec![
-            "-o".to_string(),
-            format!("window.title=\"{}\"", title),
-            "-o".to_string(),
-            "window.dynamic_title=false".to_string(),
-            "-o".to_string(),
-            "window.startup_mode=\"Windowed\"".to_string(),
-            "-o".to_string(),
-            "window.dimensions.columns=80".to_string(),
-            "-o".to_string(),
-            "window.dimensions.lines=24".to_string(),
-            "-o".to_string(),
-            format!("window.position={{x={},y={}}}", offscreen_x, offscreen_y),
-            "-e".to_string(),
-        ];
-        args.extend(editor_cmd);
-
-        log::info!("Spawning prewarm Alacritty: {} {:?}", terminal_path, args);
-
-        let child = Command::new(&terminal_path)
-            .args(&args)
-            .spawn()
-            .map_err(|e| format!("Failed to spawn prewarm alacritty: {}", e))?;
-
-        let child_pid = child.id();
+        let config = SpawnConfig {
+            title: title.clone(),
+            columns: 80,
+            lines: 24,
+            x: Some(-10000),
+            y: Some(-10000),
+            width: Some(640),
+            height: Some(384),
+            editor_cmd,
+            terminal_path,
+        };
+        let child = Self.spawn_window(&config, None)?;
+        let child_pid = child.as_ref().map(std::process::Child::id);
 
         // Wait for nvim to start and create the socket
         let mut waited = 0;
@@ -356,8 +313,8 @@ impl AlacrittySpawner {
         let nvim_pid = find_nvim_pid_for_socket(socket_path);
 
         Ok(PrewarmSpawnResult {
-            process_id: nvim_pid.or(Some(child_pid)),
-            child: Some(child),
+            process_id: nvim_pid.or(child_pid),
+            child,
             window_title: title,
         })
     }
@@ -391,4 +348,29 @@ fn shell_escape_cmd(parts: &[String]) -> String {
         .map(|s| shell_escape(s))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn positioned_popup_reuses_successful_ipc_without_another_process() {
+        let config = SpawnConfig {
+            title: "ovim-edit-test".to_string(),
+            columns: 80,
+            lines: 24,
+            x: Some(100),
+            y: Some(200),
+            width: Some(640),
+            height: Some(384),
+            editor_cmd: vec!["nvim".to_string()],
+            terminal_path: "/usr/bin/true".to_string(),
+        };
+        assert!(AlacrittySpawner.spawn_window(&config, None).expect("IPC success").is_none());
+        let args = AlacrittySpawner.build_msg_args(&config, None);
+        assert_eq!(&args[..2], &["msg", "create-window"]);
+        assert!(args.iter().any(|arg| arg == "window.position={x=200,y=400}"));
+    }
 }
