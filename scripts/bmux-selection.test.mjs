@@ -46,6 +46,7 @@ for (const tag of ['DIV', 'TEXTAREA']) {
     const fixture = prepare(tag);
     assert.equal(fixture.result.kind, 'draftjs');
     assert.equal(fixture.result.token, 'test-editor');
+    assert.equal(fixture.result.nativeInput, tag === 'TEXTAREA');
     assert.match(fixture.style().textContent, /data-ovim-editor="test-editor"/);
     assert.match(fixture.style().textContent, /background: transparent !important/);
     assert.match(fixture.style().textContent, /caret-color: transparent !important/);

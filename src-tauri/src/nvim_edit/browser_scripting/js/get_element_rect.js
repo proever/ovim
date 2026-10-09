@@ -29,6 +29,9 @@
           width: Math.round(innerRect.width),
           height: Math.round(innerRect.height),
           viewportHeight: window.innerHeight,
+          screenX: window.screenX,
+          screenY: window.screenY,
+          windowHeight: window.outerHeight,
         });
       }
     } catch (e) {
@@ -47,5 +50,8 @@
     width: Math.round(rect.width),
     height: Math.round(rect.height),
     viewportHeight: window.innerHeight,
+    screenX: window.screenX,
+    screenY: window.screenY,
+    windowHeight: window.outerHeight,
   });
 })();

@@ -104,5 +104,6 @@
 
   var kind = host.matches(".DraftEditor-root") ? "draftjs" : "editable";
   return JSON.stringify({ kind: kind, token: token, append: append,
+    nativeInput: editable.tagName === "INPUT" || editable.tagName === "TEXTAREA",
     text: append ? text.slice(current.length) : text });
 })();

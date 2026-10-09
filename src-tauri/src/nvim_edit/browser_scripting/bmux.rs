@@ -109,6 +109,8 @@ pub fn replace_text(
         kind: String,
         token: String,
         append: bool,
+        #[serde(rename = "nativeInput")]
+        native_input: bool,
         text: String,
     }
     let javascript = super::javascript::build_prepare_bmux_input_js(target_element_id, text);
@@ -125,7 +127,9 @@ pub fn replace_text(
         }
         // Draft.js tracks selection in its editor state. A DOM-only collapse
         // can leave that state at the old caret, so move it with a trusted key.
-        if prepared.append {
+        // Preparation already sets native input selection; those editors do
+        // not have a separate selection model to synchronize with key events.
+        if !prepared.native_input && prepared.append {
             // CDP bypasses AppKit's Command+Down translation on macOS.
             let _: serde_json::Value = run(&[
                 "cdp", "-t", pane_id, "Input.dispatchKeyEvent",
@@ -135,7 +139,7 @@ pub fn replace_text(
                 "cdp", "-t", pane_id, "Input.dispatchKeyEvent",
                 r#"{"type":"keyUp","key":"End","code":"End","windowsVirtualKeyCode":35}"#,
             ])?;
-        } else {
+        } else if !prepared.native_input {
             let _: serde_json::Value = run(&["key", "-t", pane_id, "Meta+A"])?;
         }
         if prepared.text.is_empty() {

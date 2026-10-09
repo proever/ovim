@@ -4,6 +4,7 @@ pub mod accessibility;
 mod browser_scripting;
 mod clipboard;
 mod geometry;
+mod live_sync;
 pub mod prewarm;
 mod rpc;
 mod session;
@@ -211,7 +212,7 @@ fn spawn_rpc_handler(
             let cached_element_id = Arc::new(std::sync::Mutex::new(None::<String>));
             let cached_id_for_callback = Arc::clone(&cached_element_id);
 
-            let on_lines = Arc::new(move |lines: Vec<String>| {
+            let worker = live_sync::LiveSyncWorker::new(move |lines: Vec<String>| {
                 handle_live_sync_update(
                     &lines,
                     browser_target.as_ref(),
@@ -220,8 +221,12 @@ fn spawn_rpc_handler(
                     &cached_id_for_callback,
                 );
             });
+            let sender = worker.sender();
+            let on_lines = Arc::new(move |lines: Vec<String>| {
+                let _ = sender.send(Some(lines));
+            });
 
-            match rpc::connect_to_nvim(&socket_path, on_lines).await {
+            let result = match rpc::connect_to_nvim(&socket_path, on_lines).await {
                 Ok(rpc_session) => {
                     log::info!("RPC connected, live sync enabled");
 
@@ -307,7 +312,10 @@ fn spawn_rpc_handler(
                     );
                     None
                 }
-            }
+            };
+            // Drain the last queued buffer before restoring focus on exit.
+            worker.finish();
+            result
         })
     })
 }
