@@ -118,12 +118,25 @@ pub fn replace_text(
         _ => return Err(format!("Unsupported bmux editor kind: {kind}")),
     };
 
-    let _: serde_json::Value = run(&["key", "-t", pane_id, "Meta+A"])?;
-    let _: serde_json::Value = if text.is_empty() {
-        run(&["key", "-t", pane_id, "Backspace"])?
-    } else {
-        run(&["type", "-t", pane_id, "--selector", &selector, "--text", text])?
-    };
+    let replacement = (|| -> Result<(), String> {
+        let _: serde_json::Value = run(&["key", "-t", pane_id, "Meta+A"])?;
+        let _: serde_json::Value = if text.is_empty() {
+            run(&["key", "-t", pane_id, "Backspace"])?
+        } else {
+            run(&["type", "-t", pane_id, "--selector", &selector, "--text", text])?
+        };
+        Ok(())
+    })();
+    // Always restore normal selection styling, including failed replacements.
+    let cleanup = format!(
+        "(function() {{ var el = document.querySelector({}); if (el && el.__ovimInputCleanup) el.__ovimInputCleanup(); return 'ok'; }})()",
+        serde_json::to_string(&format!("[data-ovim-editor=\"{token}\"]"))
+            .map_err(|error| error.to_string())?,
+    );
+    if let Err(error) = execute_javascript(pane_id, &cleanup) {
+        log::warn!("Could not restore editor selection styling: {error}");
+    }
+    replacement?;
     Ok(Some(token.to_string()))
 }
 

@@ -32,6 +32,33 @@
   }
 
   if (!editable) return "target_missing";
+  // Keep trusted select-all/type for controlled editors, but do not paint
+  // their temporary selection between separate CLI round trips.
+  var style = document.createElement("style");
+  style.textContent = '[data-ovim-editor="' + token + '"]::selection, ' +
+    '[data-ovim-editor="' + token + '"] ::selection {' +
+    'background: transparent !important; color: inherit !important; }';
+  (document.head || document.documentElement).appendChild(style);
+  var timer;
+  var cleanup = function () {
+    clearTimeout(timer);
+    try {
+      if (editable.tagName === "INPUT" || editable.tagName === "TEXTAREA") {
+        editable.setSelectionRange(editable.selectionEnd, editable.selectionEnd);
+      } else {
+        var selection = window.getSelection();
+        if (selection && selection.rangeCount && editable.contains(selection.anchorNode) &&
+            editable.contains(selection.focusNode)) selection.collapseToEnd();
+      }
+    } finally {
+      style.remove();
+      delete host.__ovimInputCleanup;
+    }
+  };
+  if (host.__ovimInputCleanup) host.__ovimInputCleanup();
+  host.__ovimInputCleanup = cleanup;
+  // Restore normal selection even if Ovim exits or the input channel fails.
+  timer = setTimeout(cleanup, 5000);
   editable.focus();
   if (editable.tagName === "INPUT" || editable.tagName === "TEXTAREA") {
     editable.setSelectionRange(0, editable.value.length);

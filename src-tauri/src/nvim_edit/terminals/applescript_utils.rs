@@ -269,6 +269,7 @@ pub fn show_and_position_window_by_title(
     width: u32,
     height: u32,
 ) {
+    super::aerospace::float_window(title);
     let name_conditions: Vec<String> = process_names
         .iter()
         .map(|n| format!("name is \"{}\"", n))

@@ -120,6 +120,15 @@ impl TerminalSpawner for AlacrittySpawner {
         let pid = find_editor_pid_for_file(file_path, settings.editor_process_name());
         log::info!("Found editor PID: {:?} for file: {}", pid, file_path);
 
+        if geometry.is_some() && super::aerospace::float_window(&config.title) {
+            if let Some(geo) = geometry.as_ref() {
+                super::applescript_utils::set_window_bounds_by_title(
+                    &["alacritty", "Alacritty"], &config.title,
+                    geo.x, geo.y, geo.width, geo.height,
+                );
+            }
+        }
+
         Ok(SpawnInfo {
             terminal_type: TerminalType::Alacritty,
             process_id: pid,
@@ -335,6 +344,12 @@ impl AlacrittySpawner {
 
         if !socket_path.exists() {
             log::warn!("Prewarm nvim socket not found after 5s, continuing anyway");
+        }
+
+        if super::aerospace::float_window(&title) {
+            super::applescript_utils::set_window_bounds_by_title(
+                &["alacritty", "Alacritty"], &title, -10000, -10000, 640, 384,
+            );
         }
 
         // Find the nvim PID inside the terminal
