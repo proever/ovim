@@ -54,10 +54,6 @@ export let PermissionSetup = ({ onboarding = false }: PermissionSetupProps) => {
     return <div className="permission-loading">Checking permissions...</div>
   }
 
-  if (!onboarding && permissionStatus.accessibility && permissionStatus.input_monitoring) {
-    return null
-  }
-
   return (
     <div className={`permission-setup ${onboarding ? "permission-setup-onboarding" : ""}`}>
       <div className="permission-card">
@@ -68,7 +64,12 @@ export let PermissionSetup = ({ onboarding = false }: PermissionSetupProps) => {
           </div>
         </div>
         {permissionStatus.accessibility ? (
-          <span className="permission-allowed">Allowed</span>
+          <>
+            <span className="permission-allowed">Allowed</span>
+            <button type="button" className="permission-allow" onClick={handleAllowAccessibility}>
+              Settings
+            </button>
+          </>
         ) : (
           <button type="button" className="permission-allow" onClick={handleAllowAccessibility}>
             Allow
@@ -84,7 +85,12 @@ export let PermissionSetup = ({ onboarding = false }: PermissionSetupProps) => {
           </div>
         </div>
         {permissionStatus.input_monitoring ? (
-          <span className="permission-allowed">Allowed</span>
+          <>
+            <span className="permission-allowed">Allowed</span>
+            <button type="button" className="permission-allow" onClick={handleAllowInputMonitoring}>
+              Settings
+            </button>
+          </>
         ) : (
           <button type="button" className="permission-allow" onClick={handleAllowInputMonitoring}>
             Allow

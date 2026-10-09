@@ -72,6 +72,7 @@ pub fn open_accessibility_settings(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn open_input_monitoring_settings(app: AppHandle) -> Result<(), String> {
+    crate::keyboard::request_input_monitoring_permission();
     open_permission_settings(
         &app,
         "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",

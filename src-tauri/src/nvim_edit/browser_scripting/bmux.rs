@@ -45,7 +45,21 @@ fn run<T: for<'de> Deserialize<'de>>(args: &[&str]) -> Result<T, String> {
     let executable = BMUX_CLI
         .as_ref()
         .ok_or_else(|| "bmux CLI not found".to_string())?;
+    // Finder launches have a minimal PATH; the bmux launcher needs Node.
+    let node = crate::nvim_edit::terminals::process_utils::resolve_command_path("node");
+    let mut paths: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect())
+        .unwrap_or_default();
+    if let Some(directory) = std::path::Path::new(&node)
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+    {
+        paths.insert(0, directory.to_path_buf());
+    }
+    let path = std::env::join_paths(paths)
+        .map_err(|error| format!("Invalid bmux command PATH: {error}"))?;
     let output = Command::new(executable)
+        .env("PATH", path)
         .args(args)
         .output()
         .map_err(|error| format!("Failed to run bmux CLI: {error}"))?;

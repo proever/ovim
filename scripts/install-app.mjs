@@ -12,7 +12,10 @@ let { stdout: cargoMetadata } = await executeFile(
 let cargoTargetDirectory = JSON.parse(cargoMetadata).target_directory
 let source = await fs.realpath(path.join(cargoTargetDirectory, "release", "bundle", "macos", "ovim.app"))
 let outputDirectory = path.resolve(process.env.OVIM_OUTPUT_DIR || "build")
-await fs.access(path.join(source, "Contents", "MacOS", "ovim"), fs.constants.X_OK)
+let { stdout: executable } = await executeFile("/usr/libexec/PlistBuddy", [
+  "-c", "Print :CFBundleExecutable", path.join(source, "Contents", "Info.plist"),
+])
+await fs.access(path.join(source, "Contents", "MacOS", executable.trim()), fs.constants.X_OK)
 await fs.mkdir(outputDirectory, { recursive: true })
 outputDirectory = await fs.realpath(outputDirectory)
 
@@ -31,7 +34,11 @@ let preserveTemporaryDirectory = false
 
 try {
   await executeFile("/usr/bin/ditto", [source, stagedApplication])
-  await executeFile("/usr/bin/codesign", ["--force", "--deep", "--sign", "-", stagedApplication])
+  // Preserve Tauri's certificate signature: ad-hoc re-signing changes the TCC identity.
+  let { stderr: signature } = await executeFile("/usr/bin/codesign", ["--display", "--verbose=2", stagedApplication])
+  if (!signature.includes("Authority=")) {
+    throw new Error("Local installation requires a certificate signature. Run pnpm package with APPLE_SIGNING_IDENTITY set to a code-signing certificate.")
+  }
   await executeFile("/usr/bin/codesign", ["--verify", "--deep", "--strict", stagedApplication])
 
   try {

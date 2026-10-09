@@ -37,8 +37,8 @@ Download the latest `.dmg` from the [Releases](https://github.com/tonisives/ovim
 git clone https://github.com/tonisives/ovim.git
 cd ovim
 pnpm install
-pnpm tauri build
-# Built app in src-tauri/target/release/bundle/
+pnpm package
+# Signed app installed in build/ovim.app
 ```
 
 Requires [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/) v18+, and [pnpm](https://pnpm.io/).
@@ -56,6 +56,30 @@ The Git setting is shared with linked worktrees, but merges inside task
 worktrees are skipped. Set `OVIM_OUTPUT_DIR` to choose another installation
 directory, or set `OVIM_SKIP_POST_MERGE_PACKAGE=1` to skip a build for one
 merge. The hook does not restart a running app.
+
+### Keep permissions across local builds
+
+`pnpm package` uses your Developer ID Application certificate and preserves the
+signature during installation. If multiple signing identities are available,
+set `APPLE_SIGNING_IDENTITY` to the certificate name or SHA-1 shown by
+`security find-identity -v -p codesigning`. Certificates with the same name are
+selected by SHA-1 to avoid ambiguous signing requests. Keep using the same
+signing identity, bundle identifier (`com.tonis.ovim`), and installation path.
+The post-merge hook uses this same packaging command.
+
+After switching from an old ad-hoc build, quit Ovim, open the signed build at its
+usual path, and grant Accessibility and Input Monitoring again if requested.
+A manually revoked permission still needs to be granted again. General Settings
+always provides buttons to open both permission panels, even when macOS reports
+access as allowed. Relaunch after changing permissions if the running process
+still reports the old state.
+
+The installer rejects ad-hoc builds rather than replacing a signed installation
+with an identity that changes on every rebuild. Tauri updater keys sign update
+archives; they do not replace an Apple code-signing certificate.
+
+Apple documents the identity mechanism in
+[Code Signing Requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements).
 
 ## Requirements
 
