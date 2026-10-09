@@ -110,27 +110,25 @@ pub fn replace_text(
         .strip_prefix("ok_")
         .and_then(|value| value.split_once(':'))
         .ok_or_else(|| format!("bmux editor preparation failed: {prepared}"))?;
-    let selector = match kind {
-        "draftjs" => format!(
-            "[data-ovim-editor=\"{token}\"] [contenteditable=\"true\"]"
-        ),
-        "editable" => format!("[data-ovim-editor=\"{token}\"]"),
-        _ => return Err(format!("Unsupported bmux editor kind: {kind}")),
-    };
+    if !matches!(kind, "draftjs" | "editable") {
+        return Err(format!("Unsupported bmux editor kind: {kind}"));
+    }
 
     let replacement = (|| -> Result<(), String> {
         let _: serde_json::Value = run(&["key", "-t", pane_id, "Meta+A"])?;
         let _: serde_json::Value = if text.is_empty() {
             run(&["key", "-t", pane_id, "Backspace"])?
         } else {
-            run(&["type", "-t", pane_id, "--selector", &selector, "--text", text])?
+            // Preparation already focused the deep editor. A document-level
+            // selector cannot resolve editors inside shadow DOM (Reddit chat).
+            run(&["type", "-t", pane_id, "--text", text])?
         };
         Ok(())
     })();
     // Always restore normal selection styling, including failed replacements.
     let cleanup = format!(
-        "(function() {{ var el = document.querySelector({}); if (el && el.__ovimInputCleanup) el.__ovimInputCleanup(); return 'ok'; }})()",
-        serde_json::to_string(&format!("[data-ovim-editor=\"{token}\"]"))
+        "(function() {{ var cleanups = window.__ovimInputCleanups; var cleanup = cleanups && cleanups[{}]; if (cleanup) cleanup(); return 'ok'; }})()",
+        serde_json::to_string(token)
             .map_err(|error| error.to_string())?,
     );
     if let Err(error) = execute_javascript(pane_id, &cleanup) {

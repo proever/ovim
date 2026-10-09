@@ -6,9 +6,23 @@
     return element;
   }
 
+  // Reddit chat nests its composer inside several open shadow roots.
+  function findTarget(root, selector) {
+    var found = root.querySelector(selector);
+    if (found) return found;
+    var elements = root.querySelectorAll("*");
+    for (var i = 0; i < elements.length; i++) {
+      if (elements[i].shadowRoot) {
+        found = findTarget(elements[i].shadowRoot, selector);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
   var token = "{{TARGET_ELEMENT_ID}}";
   var host = token
-    ? document.querySelector('[data-ovim-editor="' + token + '"]')
+    ? findTarget(document, '[data-ovim-editor="' + token + '"]')
     : null;
   var editable = null;
 
@@ -38,32 +52,42 @@
   style.textContent = '[data-ovim-editor="' + token + '"]::selection, ' +
     '[data-ovim-editor="' + token + '"] ::selection {' +
     'background: transparent !important; color: inherit !important; }';
-  (document.head || document.documentElement).appendChild(style);
+  var root = editable.getRootNode();
+  (root === document ? (document.head || document.documentElement) : root).appendChild(style);
+  function editorSelection() {
+    return root.getSelection ? root.getSelection() : window.getSelection();
+  }
+  var cleanups = window.__ovimInputCleanups || (window.__ovimInputCleanups = {});
+  if (cleanups[token]) cleanups[token]();
   var timer;
+  var cleaned = false;
   var cleanup = function () {
+    if (cleaned) return;
+    cleaned = true;
     clearTimeout(timer);
     try {
       if (editable.tagName === "INPUT" || editable.tagName === "TEXTAREA") {
         editable.setSelectionRange(editable.selectionEnd, editable.selectionEnd);
       } else {
-        var selection = window.getSelection();
+        var selection = editorSelection();
         if (selection && selection.rangeCount && editable.contains(selection.anchorNode) &&
             editable.contains(selection.focusNode)) selection.collapseToEnd();
       }
     } finally {
       style.remove();
       delete host.__ovimInputCleanup;
+      delete cleanups[token];
     }
   };
-  if (host.__ovimInputCleanup) host.__ovimInputCleanup();
   host.__ovimInputCleanup = cleanup;
+  cleanups[token] = cleanup;
   // Restore normal selection even if Ovim exits or the input channel fails.
   timer = setTimeout(cleanup, 5000);
   editable.focus();
   if (editable.tagName === "INPUT" || editable.tagName === "TEXTAREA") {
     editable.setSelectionRange(0, editable.value.length);
   } else {
-    var selection = window.getSelection();
+    var selection = editorSelection();
     var range = document.createRange();
     range.selectNodeContents(editable);
     selection.removeAllRanges();
