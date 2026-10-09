@@ -104,38 +104,76 @@ pub fn replace_text(
     text: &str,
     target_element_id: Option<&str>,
 ) -> Result<Option<String>, String> {
-    let javascript = super::javascript::build_prepare_bmux_input_js(target_element_id);
+    #[derive(Deserialize)]
+    struct PreparedInput {
+        kind: String,
+        token: String,
+        append: bool,
+        text: String,
+    }
+    let javascript = super::javascript::build_prepare_bmux_input_js(target_element_id, text);
     let prepared = execute_javascript(pane_id, &javascript)?;
-    let (kind, token) = prepared
-        .strip_prefix("ok_")
-        .and_then(|value| value.split_once(':'))
-        .ok_or_else(|| format!("bmux editor preparation failed: {prepared}"))?;
-    if !matches!(kind, "draftjs" | "editable") {
-        return Err(format!("Unsupported bmux editor kind: {kind}"));
+    let prepared: PreparedInput = serde_json::from_str(&prepared)
+        .map_err(|_| "bmux editor preparation failed".to_string())?;
+    if !matches!(prepared.kind.as_str(), "draftjs" | "editable") {
+        return Err(format!("Unsupported bmux editor kind: {}", prepared.kind));
     }
 
     let replacement = (|| -> Result<(), String> {
-        let _: serde_json::Value = run(&["key", "-t", pane_id, "Meta+A"])?;
-        let _: serde_json::Value = if text.is_empty() {
-            run(&["key", "-t", pane_id, "Backspace"])?
+        if prepared.append && prepared.text.is_empty() {
+            return Ok(());
+        }
+        // Draft.js tracks selection in its editor state. A DOM-only collapse
+        // can leave that state at the old caret, so move it with a trusted key.
+        if prepared.append {
+            // CDP bypasses AppKit's Command+Down translation on macOS.
+            let _: serde_json::Value = run(&[
+                "cdp", "-t", pane_id, "Input.dispatchKeyEvent",
+                r#"{"type":"keyDown","key":"End","code":"End","windowsVirtualKeyCode":35,"commands":["moveToEndOfDocument"]}"#,
+            ])?;
+            let _: serde_json::Value = run(&[
+                "cdp", "-t", pane_id, "Input.dispatchKeyEvent",
+                r#"{"type":"keyUp","key":"End","code":"End","windowsVirtualKeyCode":35}"#,
+            ])?;
+        } else {
+            let _: serde_json::Value = run(&["key", "-t", pane_id, "Meta+A"])?;
+        }
+        if prepared.text.is_empty() {
+            let _: serde_json::Value = run(&["key", "-t", pane_id, "Backspace"])?;
         } else {
             // Preparation already focused the deep editor. A document-level
             // selector cannot resolve editors inside shadow DOM (Reddit chat).
-            run(&["type", "-t", pane_id, "--text", text])?
-        };
+            // Draft.js needs trusted Enter events to update its block model;
+            // inserting a multiline string can leave only the last line.
+            let lines: Vec<&str> = if prepared.kind == "draftjs" {
+                prepared.text.split('\n').collect()
+            } else {
+                // In chat textareas Enter can send a message. Insert the
+                // whole string through the trusted text channel instead.
+                vec![prepared.text.as_str()]
+            };
+            for (index, line) in lines.into_iter().enumerate() {
+                if index > 0 {
+                    let _: serde_json::Value = run(&["key", "-t", pane_id, "Enter"])?;
+                }
+                if !line.is_empty() {
+                    let _: serde_json::Value = run(&["type", "-t", pane_id, "--text", line])?;
+                }
+            }
+        }
         Ok(())
     })();
     // Always restore normal selection styling, including failed replacements.
     let cleanup = format!(
         "(function() {{ var cleanups = window.__ovimInputCleanups; var cleanup = cleanups && cleanups[{}]; if (cleanup) cleanup(); return 'ok'; }})()",
-        serde_json::to_string(token)
+        serde_json::to_string(&prepared.token)
             .map_err(|error| error.to_string())?,
     );
     if let Err(error) = execute_javascript(pane_id, &cleanup) {
         log::warn!("Could not restore editor selection styling: {error}");
     }
     replacement?;
-    Ok(Some(token.to_string()))
+    Ok(Some(prepared.token))
 }
 
 #[cfg(test)]

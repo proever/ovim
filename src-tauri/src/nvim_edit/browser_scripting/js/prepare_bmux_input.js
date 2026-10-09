@@ -46,12 +46,21 @@
   }
 
   if (!editable) return "target_missing";
+  var text = {{NEW_TEXT}};
+  var current = editable.tagName === "INPUT" || editable.tagName === "TEXTAREA"
+    ? editable.value : editable.innerText;
+  if (current === "\n" && !editable.textContent) current = "";
+  // Typing at the end needs no selection. Selecting the entire draft on every
+  // keystroke also triggers selection-driven formatting popovers on X.
+  var append = text.indexOf(current) === 0;
   // Keep trusted select-all/type for controlled editors, but do not paint
   // their temporary selection between separate CLI round trips.
   var style = document.createElement("style");
   style.textContent = '[data-ovim-editor="' + token + '"]::selection, ' +
     '[data-ovim-editor="' + token + '"] ::selection {' +
-    'background: transparent !important; color: inherit !important; }';
+    'background: transparent !important; color: inherit !important; }' +
+    '[data-ovim-editor="' + token + '"], [data-ovim-editor="' + token + '"] * {' +
+    'caret-color: transparent !important; }';
   var root = editable.getRootNode();
   (root === document ? (document.head || document.documentElement) : root).appendChild(style);
   function editorSelection() {
@@ -74,6 +83,9 @@
             editable.contains(selection.focusNode)) selection.collapseToEnd();
       }
     } finally {
+      // Leave the browser field unfocused while the user edits in Neovim.
+      // Blur before removing the style so the browser caret never flashes.
+      if (deepActiveElement(document.activeElement) === editable) editable.blur();
       style.remove();
       delete host.__ovimInputCleanup;
       delete cleanups[token];
@@ -83,17 +95,14 @@
   cleanups[token] = cleanup;
   // Restore normal selection even if Ovim exits or the input channel fails.
   timer = setTimeout(cleanup, 5000);
-  editable.focus();
+  if (deepActiveElement(document.activeElement) !== editable) editable.focus({ preventScroll: true });
   if (editable.tagName === "INPUT" || editable.tagName === "TEXTAREA") {
-    editable.setSelectionRange(0, editable.value.length);
-  } else {
-    var selection = editorSelection();
-    var range = document.createRange();
-    range.selectNodeContents(editable);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    editable.setSelectionRange(append ? editable.value.length : 0, editable.value.length);
   }
+  // Contenteditable selection belongs to the controlled editor's state.
+  // The caller uses trusted Chromium commands instead of DOM ranges.
 
   var kind = host.matches(".DraftEditor-root") ? "draftjs" : "editable";
-  return "ok_" + kind + ":" + token;
+  return JSON.stringify({ kind: kind, token: token, append: append,
+    text: append ? text.slice(current.length) : text });
 })();

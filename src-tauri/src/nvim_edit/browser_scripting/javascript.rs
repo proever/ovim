@@ -145,12 +145,11 @@ pub fn build_set_element_text_js(text: &str, target_element_id: Option<&str>) ->
     minify_js(&js)
 }
 
-pub fn build_prepare_bmux_input_js(target_element_id: Option<&str>) -> String {
-    let js = PREPARE_BMUX_INPUT_JS_TEMPLATE.replace(
-        "{{TARGET_ELEMENT_ID}}",
-        target_element_id.unwrap_or(""),
-    );
-    minify_js(&js)
+pub fn build_prepare_bmux_input_js(target_element_id: Option<&str>, text: &str) -> String {
+    // Minify the template before injecting text, preserving JSON escapes.
+    minify_js(PREPARE_BMUX_INPUT_JS_TEMPLATE)
+        .replace("{{TARGET_ELEMENT_ID}}", target_element_id.unwrap_or(""))
+        .replace("{{NEW_TEXT}}", &serde_json::json!(text).to_string())
 }
 
 #[cfg(test)]
@@ -194,6 +193,6 @@ comment */ var y = 2;"#;
         let _ = build_set_cursor_position_js(0, 0);
         let _ = build_set_element_text_js("test", None);
         let _ = build_set_element_text_js("test", Some("my-element-id"));
-        let _ = build_prepare_bmux_input_js(Some("my-element-id"));
+        let _ = build_prepare_bmux_input_js(Some("my-element-id"), "new text");
     }
 }

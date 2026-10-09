@@ -167,6 +167,23 @@ pub fn get_browser_hostname(target: &BrowserTarget) -> Option<String> {
 pub fn get_browser_element_frame(target: &BrowserTarget) -> Option<ElementFrame> {
     log::info!("Attempting to get element frame from browser: {:?}", target);
 
+    if let BrowserTarget::Bmux { pane_id } = target {
+        // Bmux's Chromium view exposes screen coordinates even when its
+        // native window does not expose AXFocusedWindow.
+        let js = format!(
+            "(function() {{ var rect = JSON.parse({}); if (!rect) return 'null'; rect.x += window.screenX; rect.y += window.screenY + Math.max(0, window.outerHeight - window.innerHeight); return JSON.stringify(rect); }})()",
+            *javascript::GET_ELEMENT_RECT_JS,
+        );
+        let result = bmux::execute_javascript(pane_id, &js).ok()?;
+        let frame = parse_viewport_frame_json(&result)?;
+        return Some(ElementFrame {
+            x: frame.x,
+            y: frame.y,
+            width: frame.width,
+            height: frame.height,
+        });
+    }
+
     let BrowserTarget::AppleScript(browser_type) = target else {
         return None;
     };
