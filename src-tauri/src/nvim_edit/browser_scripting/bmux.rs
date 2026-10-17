@@ -132,11 +132,17 @@ pub fn replace_text(
         if !prepared.native_input && prepared.append {
             // CDP bypasses AppKit's Command+Down translation on macOS.
             let _: serde_json::Value = run(&[
-                "cdp", "-t", pane_id, "Input.dispatchKeyEvent",
+                "cdp",
+                "-t",
+                pane_id,
+                "Input.dispatchKeyEvent",
                 r#"{"type":"keyDown","key":"End","code":"End","windowsVirtualKeyCode":35,"commands":["moveToEndOfDocument"]}"#,
             ])?;
             let _: serde_json::Value = run(&[
-                "cdp", "-t", pane_id, "Input.dispatchKeyEvent",
+                "cdp",
+                "-t",
+                pane_id,
+                "Input.dispatchKeyEvent",
                 r#"{"type":"keyUp","key":"End","code":"End","windowsVirtualKeyCode":35}"#,
             ])?;
         } else if !prepared.native_input {
@@ -167,17 +173,23 @@ pub fn replace_text(
         }
         Ok(())
     })();
-    // Always restore normal selection styling, including failed replacements.
+    // Keep the caret hidden between updates. The session restores styling once
+    // after draining the final snapshot; failed input must restore it now.
+    if replacement.is_err() {
+        finish_edit(pane_id, &prepared.token);
+    }
+    replacement?;
+    Ok(Some(prepared.token))
+}
+
+pub fn finish_edit(pane_id: &str, token: &str) {
     let cleanup = format!(
         "(function() {{ var cleanups = window.__ovimInputCleanups; var cleanup = cleanups && cleanups[{}]; if (cleanup) cleanup(); return 'ok'; }})()",
-        serde_json::to_string(&prepared.token)
-            .map_err(|error| error.to_string())?,
+        serde_json::json!(token),
     );
     if let Err(error) = execute_javascript(pane_id, &cleanup) {
         log::warn!("Could not restore editor selection styling: {error}");
     }
-    replacement?;
-    Ok(Some(prepared.token))
 }
 
 #[cfg(test)]

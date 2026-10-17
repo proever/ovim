@@ -211,11 +211,12 @@ fn spawn_rpc_handler(
             let element_for_callback = focus_element.clone();
             let cached_element_id = Arc::new(std::sync::Mutex::new(None::<String>));
             let cached_id_for_callback = Arc::clone(&cached_element_id);
+            let target_for_callback = browser_target.clone();
 
             let worker = live_sync::LiveSyncWorker::new(move |lines: Vec<String>| {
                 handle_live_sync_update(
                     &lines,
-                    browser_target.as_ref(),
+                    target_for_callback.as_ref(),
                     element_for_callback.as_ref(),
                     &sync_flag,
                     &cached_id_for_callback,
@@ -315,6 +316,12 @@ fn spawn_rpc_handler(
             };
             // Drain the last queued buffer before restoring focus on exit.
             worker.finish();
+            if let (Some(target), Some(token)) = (
+                browser_target.as_ref(),
+                cached_element_id.lock().ok().and_then(|id| id.clone()),
+            ) {
+                browser_scripting::finish_browser_edit(target, &token);
+            }
             result
         })
     })

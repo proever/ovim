@@ -53,48 +53,65 @@
   // Typing at the end needs no selection. Selecting the entire draft on every
   // keystroke also triggers selection-driven formatting popovers on X.
   var append = text.indexOf(current) === 0;
-  // Keep trusted select-all/type for controlled editors, but do not paint
-  // their temporary selection between separate CLI round trips.
-  var style = document.createElement("style");
-  style.textContent = '[data-ovim-editor="' + token + '"]::selection, ' +
-    '[data-ovim-editor="' + token + '"] ::selection {' +
-    'background: transparent !important; color: inherit !important; }' +
-    '[data-ovim-editor="' + token + '"], [data-ovim-editor="' + token + '"] * {' +
-    'caret-color: transparent !important; }';
-  var root = editable.getRootNode();
-  (root === document ? (document.head || document.documentElement) : root).appendChild(style);
-  function editorSelection() {
-    return root.getSelection ? root.getSelection() : window.getSelection();
-  }
+  var kind = host.matches(".DraftEditor-root") ? "draftjs" : "editable";
+  var nativeInput = editable.tagName === "INPUT" || editable.tagName === "TEXTAREA";
+  var prepared = JSON.stringify({ kind: kind, token: token, append: append,
+    nativeInput: nativeInput, text: append ? text.slice(current.length) : text });
+  // Initial buffer notifications and duplicate snapshots need no input or focus changes.
+  if (text === current) return prepared;
+
   var cleanups = window.__ovimInputCleanups || (window.__ovimInputCleanups = {});
-  if (cleanups[token]) cleanups[token]();
-  var timer;
-  var cleaned = false;
-  var cleanup = function () {
-    if (cleaned) return;
-    cleaned = true;
-    clearTimeout(timer);
-    try {
-      if (editable.tagName === "INPUT" || editable.tagName === "TEXTAREA") {
-        editable.setSelectionRange(editable.selectionEnd, editable.selectionEnd);
-      } else {
-        var selection = editorSelection();
-        if (selection && selection.rangeCount && editable.contains(selection.anchorNode) &&
-            editable.contains(selection.focusNode)) selection.collapseToEnd();
+  var cleanup = cleanups[token];
+  if (cleanup && cleanup.editor !== editable) {
+    cleanup();
+    cleanup = null;
+  }
+  if (!cleanup) {
+    // Keep suppression across updates so focus styling and the browser caret
+    // do not flash between CLI calls. Restore it when the edit session ends.
+    var style = document.createElement("style");
+    style.textContent = '[data-ovim-editor="' + token + '"]::selection, ' +
+      '[data-ovim-editor="' + token + '"] ::selection {' +
+      'background: transparent !important; color: inherit !important; }' +
+      '[data-ovim-editor="' + token + '"], [data-ovim-editor="' + token + '"] * {' +
+      'caret-color: transparent !important; }';
+    var root = editable.getRootNode();
+    (root === document ? (document.head || document.documentElement) : root).appendChild(style);
+    var timer;
+    var cleaned = false;
+    var returnToBrowser = function () { cleanup(); };
+    cleanup = function () {
+      if (cleaned) return;
+      cleaned = true;
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", returnToBrowser, true);
+      try {
+        if (nativeInput) {
+          editable.setSelectionRange(editable.selectionEnd, editable.selectionEnd);
+        } else {
+          var selection = root.getSelection ? root.getSelection() : window.getSelection();
+          if (selection && selection.rangeCount && editable.contains(selection.anchorNode) &&
+              editable.contains(selection.focusNode)) selection.collapseToEnd();
+        }
+      } finally {
+        // Blurring here triggers focus borders, placeholders and editor toolbars
+        // on every subsequent update. Leave DOM focus alone.
+        style.remove();
+        delete host.__ovimInputCleanup;
+        delete cleanups[token];
       }
-    } finally {
-      // Leave the browser field unfocused while the user edits in Neovim.
-      // Blur before removing the style so the browser caret never flashes.
-      if (deepActiveElement(document.activeElement) === editable) editable.blur();
-      style.remove();
-      delete host.__ovimInputCleanup;
-      delete cleanups[token];
-    }
-  };
-  host.__ovimInputCleanup = cleanup;
-  cleanups[token] = cleanup;
-  // Restore normal selection even if Ovim exits or the input channel fails.
-  timer = setTimeout(cleanup, 5000);
+    };
+    cleanup.editor = editable;
+    cleanup.refresh = function () {
+      clearTimeout(timer);
+      // Recover normal styling if Ovim exits without completing the session.
+      timer = setTimeout(cleanup, 5000);
+    };
+    host.__ovimInputCleanup = cleanup;
+    cleanups[token] = cleanup;
+    document.addEventListener("pointerdown", returnToBrowser, true);
+  }
+  cleanup.refresh();
   if (deepActiveElement(document.activeElement) !== editable) editable.focus({ preventScroll: true });
   if (editable.tagName === "INPUT" || editable.tagName === "TEXTAREA") {
     editable.setSelectionRange(append ? editable.value.length : 0, editable.value.length);
@@ -102,8 +119,5 @@
   // Contenteditable selection belongs to the controlled editor's state.
   // The caller uses trusted Chromium commands instead of DOM ranges.
 
-  var kind = host.matches(".DraftEditor-root") ? "draftjs" : "editable";
-  return JSON.stringify({ kind: kind, token: token, append: append,
-    nativeInput: editable.tagName === "INPUT" || editable.tagName === "TEXTAREA",
-    text: append ? text.slice(current.length) : text });
+  return prepared;
 })();

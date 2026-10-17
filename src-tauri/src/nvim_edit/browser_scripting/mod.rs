@@ -42,6 +42,12 @@ fn execute_javascript(target: &BrowserTarget, js: &str) -> Result<String, String
     }
 }
 
+pub fn finish_browser_edit(target: &BrowserTarget, target_element_id: &str) {
+    if let BrowserTarget::Bmux { pane_id } = target {
+        bmux::finish_edit(pane_id, target_element_id);
+    }
+}
+
 /// Set text on the focused element in a browser using AppleScript + JavaScript
 /// Returns Ok(Option<element_id>) on success, Err with message on failure
 /// The element_id can be passed to subsequent calls to target the same element
