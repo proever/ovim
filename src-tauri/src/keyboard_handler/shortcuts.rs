@@ -3,12 +3,7 @@
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-use tauri::Emitter;
-
-use crate::click_mode::native_hints::{self, HintStyle};
-use crate::click_mode::SharedClickModeManager;
 use crate::config::Settings;
-use crate::get_app_handle;
 use crate::keyboard::{KeyCode, KeyEvent};
 use crate::nvim_edit::{self, EditSessionManager};
 use crate::vim::{ProcessResult, VimAction, VimMode, VimState};
@@ -69,17 +64,6 @@ fn is_frontmost_app_ignored(ignored_apps: &[String]) -> bool {
     false
 }
 
-/// Check if scroll mode is enabled for the frontmost app
-pub fn is_scroll_mode_enabled_for_app(enabled_apps: &[String]) -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(bundle_id) = get_frontmost_app_bundle_id() {
-            return enabled_apps.iter().any(|id| id == &bundle_id);
-        }
-    }
-    false
-}
-
 /// Check if event modifiers match the configured modifiers
 fn modifiers_match(event: &KeyEvent, mods: &crate::config::VimKeyModifiers) -> bool {
     event.modifiers.shift == mods.shift
@@ -114,70 +98,6 @@ pub fn check_nvim_edit_shortcut(
     thread::spawn(move || {
         if let Err(e) = nvim_edit::trigger_nvim_edit(edit_session_manager, nvim_settings_clone, Some(shared_settings)) {
             log::error!("Failed to trigger nvim edit: {}", e);
-        }
-    });
-
-    Some(None) // Consume the event
-}
-
-/// Check if this is the configured click mode shortcut and handle it
-pub fn check_click_mode_shortcut(
-    event: &KeyEvent,
-    settings: &Settings,
-    click_mode_manager: SharedClickModeManager,
-) -> Option<Option<KeyEvent>> {
-    let click_settings = &settings.click_mode;
-
-    if !click_settings.enabled {
-        return None;
-    }
-
-    let click_key = KeyCode::from_name(&click_settings.shortcut_key)?;
-    if event.keycode() != Some(click_key) {
-        return None;
-    }
-
-    if !modifiers_match(event, &click_settings.shortcut_modifiers) {
-        return None;
-    }
-
-    if crate::click_mode::is_disabled_for_frontmost_app(click_settings) {
-        log::debug!("Click mode shortcut passed through in disabled app");
-        return Some(Some(*event));
-    }
-
-    // Set click mode to activating state IMMEDIATELY
-    {
-        let mut mgr = click_mode_manager.lock().unwrap();
-        mgr.set_activating();
-    }
-
-    // Activate click mode on a separate thread
-    let manager = Arc::clone(&click_mode_manager);
-    thread::spawn(move || {
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let mut mgr = manager.lock().unwrap();
-            match mgr.activate() {
-                Ok(elements) => {
-                    log::info!("Click mode activated with {} elements", elements.len());
-                    let style = HintStyle::default();
-                    native_hints::show_hints(&elements, &style);
-                    if let Some(app) = get_app_handle() {
-                        let _ = app.emit("click-mode-activated", ());
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to activate click mode: {}", e);
-                    mgr.deactivate();
-                }
-            }
-        }));
-
-        if let Err(e) = result {
-            log::error!("Panic in click mode activation: {:?}", e);
-            if let Ok(mut mgr) = manager.lock() {
-                mgr.deactivate();
-            }
         }
     });
 

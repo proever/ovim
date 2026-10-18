@@ -4,8 +4,20 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::click_mode::DoubleTapModifier;
 use super::VimKeyModifiers;
+
+/// Double-tap key options for activating the Edit Popup
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DoubleTapModifier {
+    #[default]
+    None,
+    Command,
+    Option,
+    Control,
+    Shift,
+    Escape,
+}
 
 /// Supported editor types for Edit Popup
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]

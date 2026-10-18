@@ -15,7 +15,6 @@ export default defineConfig(async () => ({
         indicator: resolve(__dirname, "indicator.html"),
         settings: resolve(__dirname, "settings.html"),
         permissions: resolve(__dirname, "permissions.html"),
-        "click-overlay": resolve(__dirname, "click-overlay.html"),
       },
     },
   },

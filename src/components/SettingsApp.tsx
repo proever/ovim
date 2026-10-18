@@ -5,8 +5,6 @@ import { IndicatorSettings } from "./IndicatorSettings";
 import { WidgetSettings } from "./WidgetSettings";
 import { IgnoredAppsSettings } from "./IgnoredAppsSettings";
 import { NvimEditSettings } from "./NvimEditSettings";
-import { ClickModeSettingsComponent } from "./ClickModeSettings";
-import { ScrollModeSettingsComponent } from "./ScrollModeSettings";
 
 export interface VimKeyModifiers {
   shift: boolean;
@@ -32,34 +30,6 @@ export interface NvimEditSettings {
   clipboard_mode: boolean;
   double_tap_modifier: DoubleTapModifier;
   domain_filetypes: Record<string, string>;
-}
-
-export interface ClickModeSettings {
-  enabled: boolean;
-  disabled_apps: string[];
-  shortcut_key: string;
-  shortcut_modifiers: VimKeyModifiers;
-  double_tap_modifier: DoubleTapModifier;
-  hint_chars: string;
-  show_search_bar: boolean;
-  hint_opacity: number;
-  hint_font_size: number;
-  hint_bg_color: string;
-  hint_text_color: string;
-  // Advanced timing settings
-  ax_stabilization_delay_ms: number;
-  cache_ttl_ms: number;
-  // Advanced traversal settings
-  max_depth: number;
-  max_elements: number;
-}
-
-export interface ScrollModeSettings {
-  enabled: boolean;
-  scroll_step: number;
-  enabled_apps: string[];
-  overlay_blocklist: string[];
-  disabled_shortcuts: string[];
 }
 
 export interface RgbColor {
@@ -117,12 +87,10 @@ export interface Settings {
   indicator_rows: RowItem[];
   electron_apps: string[];
   nvim_edit: NvimEditSettings;
-  click_mode: ClickModeSettings;
-  scroll_mode: ScrollModeSettings;
   shell_widgets: ShellWidgetConfig[];
 }
 
-type TabId = "general" | "indicator" | "widgets" | "ignored" | "nvim-config" | "nvim-window" | "click-mode" | "scroll-mode";
+type TabId = "general" | "indicator" | "widgets" | "ignored" | "nvim-config" | "nvim-window";
 
 export function SettingsApp() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -176,14 +144,6 @@ export function SettingsApp() {
     { id: "nvim-window", label: "Window", icon: "window" },
   ];
 
-  const clickModeTabs: { id: TabId; label: string; icon: string }[] = [
-    { id: "click-mode", label: "Settings", icon: "cursor" },
-  ];
-
-  const scrollModeTabs: { id: TabId; label: string; icon: string }[] = [
-    { id: "scroll-mode", label: "Settings", icon: "scroll" },
-  ];
-
   return (
     <div className="settings-container">
       <div className="tabs">
@@ -226,38 +186,6 @@ export function SettingsApp() {
             ))}
           </div>
         </div>
-
-        <div className="tab-group">
-          <span className="tab-group-label">Click Mode</span>
-          <div className="tab-group-tabs">
-            {clickModeTabs.map((tab) => (
-              <button
-                key={tab.id}
-                className={`tab ${activeTab === tab.id ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <span className="tab-icon">{getIcon(tab.icon)}</span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="tab-group">
-          <span className="tab-group-label">Scroll Mode</span>
-          <div className="tab-group-tabs">
-            {scrollModeTabs.map((tab) => (
-              <button
-                key={tab.id}
-                className={`tab ${activeTab === tab.id ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <span className="tab-icon">{getIcon(tab.icon)}</span>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="tab-content">
@@ -276,12 +204,6 @@ export function SettingsApp() {
         {(activeTab === "nvim-config" || activeTab === "nvim-window") && (
           <NvimEditSettings settings={settings} onUpdate={updateSettings} activeTab={activeTab} />
         )}
-        {activeTab === "click-mode" && (
-          <ClickModeSettingsComponent settings={settings} onUpdate={updateSettings} />
-        )}
-        {activeTab === "scroll-mode" && (
-          <ScrollModeSettingsComponent settings={settings} onUpdate={updateSettings} />
-        )}
       </div>
 
     </div>
@@ -296,8 +218,6 @@ function getIcon(name: string): string {
     pause: "\u23F8",
     edit: "\u270E",
     window: "\u25A1",
-    cursor: "\u2316",
-    scroll: "\u21C5",
   };
   return icons[name] || "";
 }

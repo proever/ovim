@@ -1,14 +1,11 @@
 // Allow unexpected_cfgs from the objc crate's macros which use cfg(feature = "cargo-clippy")
 #![allow(unexpected_cfgs)]
 
-mod click_mode;
 mod commands;
 mod config;
 mod keyboard;
 mod keyboard_handler;
-mod list_mode;
 mod nvim_edit;
-mod scroll_mode;
 mod vim;
 mod widgets;
 mod window;
@@ -22,10 +19,8 @@ use tauri::{
     AppHandle, Emitter, Listener, Manager, State,
 };
 
-use click_mode::SharedClickModeManager;
 use commands::RecordedKey;
-use config::click_mode::DoubleTapModifier;
-use config::Settings;
+use config::{DoubleTapModifier, Settings};
 use keyboard::{
     check_accessibility_permission, check_input_monitoring_permission, KeyboardCapture,
 };
@@ -33,9 +28,8 @@ use keyboard_handler::{create_keyboard_callback, KeyboardCallbackContext};
 use keyboard_handler::double_tap::{DoubleTapKey, DoubleTapManager};
 use nvim_edit::prewarm::PrewarmManager;
 use nvim_edit::EditSessionManager;
-use scroll_mode::SharedScrollModeState;
 use vim::VimState;
-use window::{setup_click_overlay_window, setup_indicator_window};
+use window::setup_indicator_window;
 
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -89,9 +83,6 @@ pub struct AppState {
     pub record_key_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<RecordedKey>>>>,
     #[allow(dead_code)]
     edit_session_manager: Arc<EditSessionManager>,
-    pub click_mode_manager: SharedClickModeManager,
-    #[allow(dead_code)]
-    pub scroll_state: SharedScrollModeState,
 }
 
 /// Helper to check if a double-tap key matches a setting
@@ -106,78 +97,20 @@ fn matches_double_tap_setting(setting: &DoubleTapModifier, key: &DoubleTapKey) -
     )
 }
 
-/// Handle double-tap activation for click mode or nvim edit
+/// Handle double-tap activation for nvim edit
 fn handle_double_tap_activation(
     double_tap_key: DoubleTapKey,
     settings: &Arc<Mutex<Settings>>,
-    click_mode_manager: &SharedClickModeManager,
     edit_session_manager: &Arc<EditSessionManager>,
 ) {
     let settings_guard = settings.lock().unwrap();
 
-    // Check if this double-tap should trigger click mode
-    let click_mode_trigger = matches_double_tap_setting(
-        &settings_guard.click_mode.double_tap_modifier,
-        &double_tap_key,
-    );
-
-    // Check if this double-tap should trigger nvim edit mode
     let nvim_edit_trigger = matches_double_tap_setting(
         &settings_guard.nvim_edit.double_tap_modifier,
         &double_tap_key,
     );
 
-    // Don't allow both to be triggered by the same key
-    // Click mode takes priority if both are set to the same key
-    let click_mode_enabled = click_mode_trigger
-        && settings_guard.click_mode.enabled
-        && !click_mode::is_disabled_for_frontmost_app(&settings_guard.click_mode);
-
-    if click_mode_enabled {
-        log::info!("Double-tap {:?} detected - activating click mode", double_tap_key);
-        drop(settings_guard);
-
-        // Activate click mode
-        {
-            let mut mgr = click_mode_manager.lock().unwrap();
-            if !mgr.is_active() {
-                mgr.set_activating();
-            }
-        }
-
-        let manager = Arc::clone(click_mode_manager);
-        let dt_start = std::time::Instant::now();
-        std::thread::spawn(move || {
-            log::info!("[TIMING] double-tap thread spawned at {}ms", dt_start.elapsed().as_millis());
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut mgr = manager.lock().unwrap();
-                log::info!("[TIMING] lock acquired at {}ms", dt_start.elapsed().as_millis());
-                match mgr.activate() {
-                    Ok(elements) => {
-                        log::info!("[TIMING] activate() done at {}ms with {} elements", dt_start.elapsed().as_millis(), elements.len());
-                        let style = click_mode::native_hints::HintStyle::default();
-                        click_mode::native_hints::show_hints(&elements, &style);
-                        log::info!("[TIMING] show_hints() returned at {}ms", dt_start.elapsed().as_millis());
-                        if let Some(app) = get_app_handle() {
-                            let _ = app.emit("click-mode-activated", ());
-                            log::info!("[TIMING] emit done at {}ms", dt_start.elapsed().as_millis());
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to activate click mode via double-tap: {}", e);
-                        mgr.deactivate();
-                    }
-                }
-            }));
-
-            if let Err(e) = result {
-                log::error!("Panic in click mode activation via double-tap: {:?}", e);
-                if let Ok(mut mgr) = manager.lock() {
-                    mgr.deactivate();
-                }
-            }
-        });
-    } else if nvim_edit_trigger && settings_guard.nvim_edit.enabled {
+    if nvim_edit_trigger && settings_guard.nvim_edit.enabled {
         log::info!("Double-tap {:?} detected - activating nvim edit", double_tap_key);
         let nvim_settings = settings_guard.nvim_edit.clone();
         let shared_settings = Arc::clone(settings);
@@ -257,27 +190,10 @@ pub fn run() {
     init_file_logger();
     log::info!("ovim-rust started");
 
-    // Initialize the accessibility helper binary
-    click_mode::accessibility::init_helper();
-
-    // Pre-create hint window pool for fast click mode activation
-    click_mode::native_hints::init_pool();
-
     let (vim_state, mode_rx) = VimState::new();
     let vim_state = Arc::new(Mutex::new(vim_state));
 
     let settings = Arc::new(Mutex::new(Settings::load()));
-
-    // Initialize click mode settings from loaded settings
-    {
-        let s = settings.lock().unwrap();
-        click_mode::accessibility::update_timing_settings(
-            s.click_mode.cache_ttl_ms,
-            s.click_mode.ax_stabilization_delay_ms,
-            s.click_mode.max_depth,
-            s.click_mode.max_elements,
-        );
-    }
 
     let record_key_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<RecordedKey>>>> =
         Arc::new(Mutex::new(None));
@@ -299,22 +215,17 @@ pub fn run() {
     }
 
     let edit_session_manager = Arc::new(edit_session_manager);
-    let click_mode_manager = click_mode::create_manager();
     let double_tap_manager = Arc::new(Mutex::new(DoubleTapManager::new()));
-    let scroll_state = scroll_mode::create_scroll_state();
-    let list_state = list_mode::create_list_state();
 
     // Create double-tap callback that handles mode activation
     let double_tap_callback = {
         let settings_for_dt = Arc::clone(&settings);
-        let click_manager_for_dt = Arc::clone(&click_mode_manager);
         let edit_session_manager_for_dt = Arc::clone(&edit_session_manager);
 
         Box::new(move |double_tap_key: DoubleTapKey| {
             handle_double_tap_activation(
                 double_tap_key,
                 &settings_for_dt,
-                &click_manager_for_dt,
                 &edit_session_manager_for_dt,
             );
         }) as keyboard_handler::DoubleTapCallback
@@ -326,38 +237,13 @@ pub fn run() {
         settings: Arc::clone(&settings),
         record_key_tx: Arc::clone(&record_key_tx),
         edit_session_manager: Arc::clone(&edit_session_manager),
-        click_mode_manager: Arc::clone(&click_mode_manager),
         double_tap_manager: Arc::clone(&double_tap_manager),
         double_tap_callback,
-        scroll_state: Arc::clone(&scroll_state),
-        list_state: Arc::clone(&list_state),
     }));
-
-    // Set up mouse click callback to hide click mode on any mouse click
-    {
-        let click_manager_for_mouse = Arc::clone(&click_mode_manager);
-        keyboard_capture.set_mouse_callback(move |_event| {
-            if click_mode::deactivate_and_notify(&click_manager_for_mouse) {
-                log::info!("Mouse click detected - deactivating click mode");
-            }
-            true // Always pass through mouse events
-        });
-    }
-
-    // Set up scroll callback to hide click mode on scroll
-    {
-        let click_manager_for_scroll = Arc::clone(&click_mode_manager);
-        keyboard_capture.set_scroll_callback(move || {
-            if click_mode::deactivate_and_notify(&click_manager_for_scroll) {
-                log::info!("Scroll detected - deactivating click mode");
-            }
-        });
-    }
 
     // Set up flags changed callback for double-tap modifier shortcuts
     {
         let settings_for_flags = Arc::clone(&settings);
-        let click_manager_for_flags = Arc::clone(&click_mode_manager);
         let edit_session_manager_for_flags = Arc::clone(&edit_session_manager);
         let double_tap_manager_for_flags = Arc::clone(&double_tap_manager);
 
@@ -375,25 +261,9 @@ pub fn run() {
                 handle_double_tap_activation(
                     double_tap_key,
                     &settings_for_flags,
-                    &click_manager_for_flags,
                     &edit_session_manager_for_flags,
                 );
             }
-        });
-    }
-
-    // Set up focus change observer to hide click mode when app loses focus
-    // and prefetch elements for the new app
-    {
-        let click_manager_for_focus = Arc::clone(&click_mode_manager);
-        click_mode::start_focus_observer(move || {
-            click_mode::accessibility::invalidate_cache();
-
-            if click_mode::deactivate_and_notify(&click_manager_for_focus) {
-                log::info!("App focus changed - deactivating click mode");
-            }
-
-            click_mode::accessibility::prefetch_elements();
         });
     }
 
@@ -403,8 +273,6 @@ pub fn run() {
         keyboard_capture,
         record_key_tx,
         edit_session_manager,
-        click_mode_manager,
-        scroll_state,
     };
 
     let mode_rx = Arc::new(Mutex::new(mode_rx));
@@ -444,14 +312,6 @@ pub fn run() {
             commands::is_mouse_over_indicator,
             commands::toggle_indicator_visible,
             commands::get_version,
-            // Click mode commands
-            commands::activate_click_mode,
-            commands::deactivate_click_mode,
-            commands::get_click_mode_state,
-            commands::click_mode_click_element,
-            commands::click_mode_right_click_element,
-            commands::click_mode_input_hint,
-            commands::get_click_mode_elements,
         ])
         .setup(move |app| {
             let show_in_dock = app
@@ -536,25 +396,6 @@ pub fn run() {
                 if let Err(e) = setup_indicator_window(&indicator_window) {
                     log::error!("Failed to setup indicator window: {}", e);
                 }
-            }
-
-            // Set up click overlay window (hidden initially)
-            if let Some(click_overlay) = app.get_webview_window("click-overlay") {
-                if let Err(e) = setup_click_overlay_window(&click_overlay) {
-                    log::error!("Failed to setup click overlay window: {}", e);
-                }
-
-                // When the overlay window loses focus (user clicked another window),
-                // deactivate click mode so the indicator doesn't get stuck.
-                let app_handle_for_overlay = app.handle().clone();
-                click_overlay.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Focused(false) = event {
-                        let state: State<AppState> = app_handle_for_overlay.state();
-                        if click_mode::deactivate_and_notify(&state.click_mode_manager) {
-                            log::info!("Click overlay lost focus - deactivating click mode");
-                        }
-                    }
-                });
             }
 
             if let Some(settings_window) = app.get_webview_window("settings") {

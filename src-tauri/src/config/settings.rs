@@ -1,10 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use super::click_mode::ClickModeSettings;
 use super::colors::ModeColors;
 use super::nvim_edit::NvimEditSettings;
-use super::scroll_mode::ScrollModeSettings;
 
 /// A row item in the indicator layout
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -113,12 +111,6 @@ pub struct Settings {
     pub electron_apps: Vec<String>,
     /// Settings for Edit Popup feature
     pub nvim_edit: NvimEditSettings,
-    /// Settings for Click Mode feature
-    #[serde(default)]
-    pub click_mode: ClickModeSettings,
-    /// Settings for Scroll Mode feature (Vimium-style navigation)
-    #[serde(default)]
-    pub scroll_mode: ScrollModeSettings,
     /// User-defined shell script widgets
     #[serde(default)]
     pub shell_widgets: Vec<ShellWidgetConfig>,
@@ -164,8 +156,6 @@ impl Default for Settings {
             bottom_widget: "None".to_string(),
             electron_apps: vec![],
             nvim_edit: NvimEditSettings::default(),
-            click_mode: ClickModeSettings::default(),
-            scroll_mode: ScrollModeSettings::default(),
             shell_widgets: vec![],
         }
     }
