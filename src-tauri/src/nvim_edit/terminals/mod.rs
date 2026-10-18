@@ -3,7 +3,6 @@
 //! This module provides a unified interface for spawning different terminal emulators
 //! with various text editors (Neovim, Vim, Helix, etc.)
 
-mod aerospace;
 mod alacritty;
 pub mod applescript_utils;
 mod ghostty;

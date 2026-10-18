@@ -141,8 +141,6 @@
     if (!draftRoot) return null;
 
     // Draft.js ignores synthetic browser events and reverts direct DOM writes.
-    // A caller with a trusted input channel (such as bmux) handles this editor
-    // before running this generic JavaScript path.
     return "unsupported_draftjs";
   }
 

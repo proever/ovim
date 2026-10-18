@@ -1,7 +1,7 @@
 //! Text capture from focused elements
 
 use super::accessibility::{self, ElementFrame};
-use super::browser_scripting::{self, BrowserTarget, CursorPosition};
+use super::browser_scripting::{self, BrowserType, CursorPosition};
 use super::clipboard::capture_text_via_clipboard;
 
 /// Result of text capture with additional context
@@ -11,7 +11,7 @@ pub struct CaptureResult {
     /// Initial cursor position (0-based line and column) if available
     pub cursor_position: Option<CursorPosition>,
     /// Browser type if this is a browser
-    pub browser_target: Option<BrowserTarget>,
+    pub browser_target: Option<BrowserType>,
 }
 
 /// Capture text and element frame from the focused element
@@ -21,7 +21,7 @@ pub fn capture_text_and_frame(
     initial_element_frame: Option<ElementFrame>,
     clipboard_mode: bool,
 ) -> CaptureResult {
-    let browser_target = browser_scripting::detect_browser_target(app_bundle_id);
+    let browser_target = browser_scripting::detect_browser_type(app_bundle_id);
 
     // If clipboard_mode is enabled, skip smart detection and use clipboard directly
     if clipboard_mode {
@@ -39,7 +39,7 @@ pub fn capture_text_and_frame(
 
     // For browsers, try to get text AND cursor in one JS call
     // This is more reliable as cursor position won't be affected by text capture
-    if let Some(target) = browser_target.as_ref() {
+    if let Some(target) = browser_target {
         log::info!(
             "Text capture: attempting JS capture for browser {:?}",
             target
@@ -82,7 +82,7 @@ pub fn capture_text_and_frame(
 
     // Get element frame from browser scripting (this can still work for positioning)
     let element_frame = if initial_element_frame.is_none() {
-        if let Some(target) = browser_target.as_ref() {
+        if let Some(target) = browser_target {
             log::info!("Getting element frame via browser scripting");
             let browser_frame = browser_scripting::get_browser_element_frame(target);
             log::info!(

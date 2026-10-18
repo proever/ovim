@@ -72,7 +72,7 @@ pub fn trigger_nvim_edit(
 
     // 4. Determine domain key for filetype persistence
     // For browsers, use the hostname. For native apps, use bundle ID.
-    let domain_key = if let Some(target) = browser_target.as_ref() {
+    let domain_key = if let Some(target) = browser_target {
         browser_scripting::get_browser_hostname(target)
             .unwrap_or_else(|| focus_context.app_bundle_id.clone())
     } else {
@@ -125,7 +125,7 @@ pub fn trigger_nvim_edit(
             &session,
             &settings,
             Arc::clone(&live_sync_worked),
-            browser_target.clone(),
+            browser_target,
             initial_cursor,
         )
     };
@@ -177,7 +177,7 @@ fn spawn_rpc_handler(
     session: &session::EditSession,
     settings: &NvimEditSettings,
     live_sync_worked: Arc<AtomicBool>,
-    browser_target: Option<browser_scripting::BrowserTarget>,
+    browser_target: Option<browser_scripting::BrowserType>,
     initial_cursor: Option<browser_scripting::CursorPosition>,
 ) -> thread::JoinHandle<Option<RpcResult>> {
     let socket_path = session.socket_path.clone();
@@ -211,12 +211,11 @@ fn spawn_rpc_handler(
             let element_for_callback = focus_element.clone();
             let cached_element_id = Arc::new(std::sync::Mutex::new(None::<String>));
             let cached_id_for_callback = Arc::clone(&cached_element_id);
-            let target_for_callback = browser_target.clone();
 
             let worker = live_sync::LiveSyncWorker::new(move |lines: Vec<String>| {
                 handle_live_sync_update(
                     &lines,
-                    target_for_callback.as_ref(),
+                    browser_target,
                     element_for_callback.as_ref(),
                     &sync_flag,
                     &cached_id_for_callback,
@@ -316,12 +315,6 @@ fn spawn_rpc_handler(
             };
             // Drain the last queued buffer before restoring focus on exit.
             worker.finish();
-            if let (Some(target), Some(token)) = (
-                browser_target.as_ref(),
-                cached_element_id.lock().ok().and_then(|id| id.clone()),
-            ) {
-                browser_scripting::finish_browser_edit(target, &token);
-            }
             result
         })
     })
@@ -330,7 +323,7 @@ fn spawn_rpc_handler(
 /// Handle a live sync update from nvim
 fn handle_live_sync_update(
     lines: &[String],
-    browser_target: Option<&browser_scripting::BrowserTarget>,
+    browser_target: Option<browser_scripting::BrowserType>,
     focus_element: Option<&accessibility::AXElementHandle>,
     sync_flag: &AtomicBool,
     cached_element_id: &std::sync::Mutex<Option<String>>,
@@ -403,7 +396,7 @@ fn spawn_completion_handler(
     session_id: uuid::Uuid,
     rpc_handle: thread::JoinHandle<Option<RpcResult>>,
     live_sync_worked: Arc<AtomicBool>,
-    browser_target: Option<browser_scripting::BrowserTarget>,
+    browser_target: Option<browser_scripting::BrowserType>,
     clipboard_mode: bool,
     shared_settings: Option<Arc<Mutex<Settings>>>,
 ) {
@@ -483,7 +476,7 @@ fn spawn_completion_handler(
         }
 
         // Restore cursor position in browser if we have it
-        if let (Some(target), Some(cursor)) = (browser_target.as_ref(), final_cursor) {
+        if let (Some(target), Some(cursor)) = (browser_target, final_cursor) {
             log::info!(
                 "Restoring browser cursor to line={}, col={}",
                 cursor.line,
