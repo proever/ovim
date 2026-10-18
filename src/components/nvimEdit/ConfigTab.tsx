@@ -410,44 +410,6 @@ export function ConfigTab({
         <label className="checkbox-label">
           <input
             type="checkbox"
-            checked={nvimEdit.use_custom_script ?? false}
-            onChange={(e) => onUpdate({ use_custom_script: e.target.checked })}
-            disabled={!nvimEdit.enabled}
-          />
-          Use custom launcher script
-        </label>
-        <span className="hint">
-          Use a script to spawn the editor. Customize PATH, use tmux popups, etc.
-        </span>
-      </div>
-
-      {nvimEdit.use_custom_script && (
-        <div className="form-group">
-          <div className="path-input-row">
-            <button
-              type="button"
-              className="edit-script-btn"
-              onClick={async () => {
-                try {
-                  await invoke("open_launcher_script")
-                } catch (e) {
-                  console.error("Failed to open launcher script:", e)
-                  alert(`Failed to open launcher script: ${e}`)
-                }
-              }}
-              disabled={!nvimEdit.enabled}
-            >
-              Edit Launcher Script
-            </button>
-          </div>
-          <span className="hint">~/Library/Application Support/ovim/terminal-launcher.sh</span>
-        </div>
-      )}
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
             checked={nvimEdit.live_sync_enabled}
             onChange={(e) => onUpdate({ live_sync_enabled: e.target.checked })}
             disabled={!nvimEdit.enabled}

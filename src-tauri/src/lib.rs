@@ -4,10 +4,8 @@
 mod click_mode;
 mod commands;
 mod config;
-pub mod ipc;
 mod keyboard;
 mod keyboard_handler;
-pub mod launcher_callback;
 mod list_mode;
 mod nvim_edit;
 mod scroll_mode;
@@ -28,17 +26,15 @@ use click_mode::SharedClickModeManager;
 use commands::RecordedKey;
 use config::click_mode::DoubleTapModifier;
 use config::Settings;
-use ipc::{IpcCommand, IpcResponse};
 use keyboard::{
     check_accessibility_permission, check_input_monitoring_permission, KeyboardCapture,
 };
 use keyboard_handler::{create_keyboard_callback, KeyboardCallbackContext};
 use keyboard_handler::double_tap::{DoubleTapKey, DoubleTapManager};
 use nvim_edit::prewarm::PrewarmManager;
-use nvim_edit::terminals::install_scripts;
 use nvim_edit::EditSessionManager;
 use scroll_mode::SharedScrollModeState;
-use vim::{VimMode, VimState};
+use vim::VimState;
 use window::{setup_click_overlay_window, setup_indicator_window};
 
 use std::fs::OpenOptions;
@@ -96,155 +92,6 @@ pub struct AppState {
     pub click_mode_manager: SharedClickModeManager,
     #[allow(dead_code)]
     pub scroll_state: SharedScrollModeState,
-}
-
-fn handle_ipc_command(
-    state: &mut VimState,
-    app_handle: &AppHandle,
-    settings: &Arc<Mutex<Settings>>,
-    edit_session_manager: &Arc<EditSessionManager>,
-    click_mode_manager: &SharedClickModeManager,
-    cmd: IpcCommand,
-) -> IpcResponse {
-    match cmd {
-        IpcCommand::GetMode => IpcResponse::Mode(state.mode().as_str().to_string()),
-        IpcCommand::Toggle => {
-            let new_mode = state.toggle_mode();
-            let _ = app_handle.emit("mode-change", new_mode.as_str());
-            IpcResponse::Mode(new_mode.as_str().to_string())
-        }
-        IpcCommand::Insert => {
-            state.set_mode_external(VimMode::Insert);
-            let _ = app_handle.emit("mode-change", "insert");
-            IpcResponse::Ok
-        }
-        IpcCommand::Normal => {
-            state.set_mode_external(VimMode::Normal);
-            let _ = app_handle.emit("mode-change", "normal");
-            IpcResponse::Ok
-        }
-        IpcCommand::Visual => {
-            state.set_mode_external(VimMode::Visual);
-            let _ = app_handle.emit("mode-change", "visual");
-            IpcResponse::Ok
-        }
-        IpcCommand::SetMode(mode_str) => handle_set_mode(state, app_handle, &mode_str),
-        IpcCommand::EditPopup => {
-            let nvim_settings = {
-                let s = settings.lock().unwrap();
-                if !s.nvim_edit.enabled {
-                    return IpcResponse::Error("Edit Popup is disabled".to_string());
-                }
-                s.nvim_edit.clone()
-            };
-            let manager = Arc::clone(edit_session_manager);
-            let shared_settings = Arc::clone(settings);
-            std::thread::spawn(move || {
-                if let Err(e) = nvim_edit::trigger_nvim_edit(manager, nvim_settings, Some(shared_settings)) {
-                    log::error!("Failed to trigger nvim edit via IPC: {}", e);
-                }
-            });
-            IpcResponse::Ok
-        }
-        IpcCommand::ClickMode => {
-            let is_disabled_for_app = {
-                let s = settings.lock().unwrap();
-                if !s.click_mode.enabled {
-                    return IpcResponse::Error("Click Mode is disabled".to_string());
-                }
-                click_mode::is_disabled_for_frontmost_app(&s.click_mode)
-            };
-            if is_disabled_for_app {
-                return IpcResponse::Error(
-                    "Click Mode is disabled for the frontmost application".to_string(),
-                );
-            }
-
-            // Set click mode to activating state
-            {
-                let mut mgr = click_mode_manager.lock().unwrap();
-                if mgr.is_active() {
-                    return IpcResponse::Error("Click Mode is already active".to_string());
-                }
-                mgr.set_activating();
-            }
-
-            let manager = Arc::clone(click_mode_manager);
-            std::thread::spawn(move || {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let mut mgr = manager.lock().unwrap();
-                    match mgr.activate() {
-                        Ok(elements) => {
-                            log::info!("Click mode activated via IPC with {} elements", elements.len());
-                            let style = click_mode::native_hints::HintStyle::default();
-                            click_mode::native_hints::show_hints(&elements, &style);
-                            if let Some(app) = get_app_handle() {
-                                let _ = app.emit("click-mode-activated", ());
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to activate click mode via IPC: {}", e);
-                            mgr.deactivate();
-                        }
-                    }
-                }));
-
-                if let Err(e) = result {
-                    log::error!("Panic in click mode activation via IPC: {:?}", e);
-                    if let Ok(mut mgr) = manager.lock() {
-                        mgr.deactivate();
-                    }
-                }
-            });
-            IpcResponse::Ok
-        }
-        IpcCommand::LauncherHandled {
-            session_id,
-            editor_pid,
-        } => {
-            if launcher_callback::signal_handled(&session_id, editor_pid) {
-                log::info!(
-                    "Launcher signaled handled for session {}, pid: {:?}",
-                    session_id,
-                    editor_pid
-                );
-                IpcResponse::Ok
-            } else {
-                log::warn!("Unknown launcher session: {}", session_id);
-                IpcResponse::Error(format!("Unknown session: {}", session_id))
-            }
-        }
-        IpcCommand::LauncherFallthrough { session_id } => {
-            if launcher_callback::signal_fallthrough(&session_id) {
-                log::info!("Launcher signaled fallthrough for session {}", session_id);
-                IpcResponse::Ok
-            } else {
-                log::warn!("Unknown launcher session: {}", session_id);
-                IpcResponse::Error(format!("Unknown session: {}", session_id))
-            }
-        }
-    }
-}
-
-fn handle_set_mode(state: &mut VimState, app_handle: &AppHandle, mode_str: &str) -> IpcResponse {
-    match mode_str.to_lowercase().as_str() {
-        "insert" | "i" => {
-            state.set_mode_external(VimMode::Insert);
-            let _ = app_handle.emit("mode-change", "insert");
-            IpcResponse::Ok
-        }
-        "normal" | "n" => {
-            state.set_mode_external(VimMode::Normal);
-            let _ = app_handle.emit("mode-change", "normal");
-            IpcResponse::Ok
-        }
-        "visual" | "v" => {
-            state.set_mode_external(VimMode::Visual);
-            let _ = app_handle.emit("mode-change", "visual");
-            IpcResponse::Ok
-        }
-        _ => IpcResponse::Error(format!("Unknown mode: {}", mode_str)),
-    }
 }
 
 /// Helper to check if a double-tap key matches a setting
@@ -550,11 +397,6 @@ pub fn run() {
         });
     }
 
-    // Clone for IPC handler before moving into app_state
-    let settings_for_ipc = Arc::clone(&settings);
-    let edit_session_manager_for_ipc = Arc::clone(&edit_session_manager);
-    let click_mode_manager_for_ipc = Arc::clone(&click_mode_manager);
-
     let app_state = AppState {
         settings,
         vim_state: Arc::clone(&vim_state),
@@ -595,7 +437,6 @@ pub fn run() {
             commands::cancel_record_key,
             commands::webview_log,
             commands::validate_nvim_edit_paths,
-            commands::open_launcher_script,
             commands::remove_domain_filetype,
             commands::get_domain_filetypes,
             commands::set_indicator_ignores_mouse,
@@ -625,9 +466,6 @@ pub fn run() {
 
             // Store app handle for global access (used by keyboard handler for events)
             let _ = APP_HANDLE.set(app.handle().clone());
-
-            // Initialize launcher callback registry
-            launcher_callback::init();
 
             let initial_indicator_visible = Settings::load().indicator_visible;
             let show_indicator_item = CheckMenuItem::with_id(
@@ -767,31 +605,6 @@ pub fn run() {
                     }
                 }
             }
-
-            // Install launcher and sample scripts to config directory
-            if let Err(e) = install_scripts(app.handle()) {
-                log::warn!("Failed to install scripts: {}", e);
-            }
-
-            let vim_state_for_ipc2 = Arc::clone(&vim_state);
-            let app_handle_for_ipc = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let handler = move |cmd: IpcCommand| -> IpcResponse {
-                    let mut state = vim_state_for_ipc2.lock().unwrap();
-                    handle_ipc_command(
-                        &mut state,
-                        &app_handle_for_ipc,
-                        &settings_for_ipc,
-                        &edit_session_manager_for_ipc,
-                        &click_mode_manager_for_ipc,
-                        cmd,
-                    )
-                };
-
-                if let Err(e) = ipc::start_ipc_server(handler).await {
-                    log::error!("IPC server error: {}", e);
-                }
-            });
 
             Ok(())
         })

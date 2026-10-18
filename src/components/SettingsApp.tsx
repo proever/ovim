@@ -29,7 +29,6 @@ export interface NvimEditSettings {
   popup_width: number;
   popup_height: number;
   live_sync_enabled: boolean;
-  use_custom_script: boolean;
   clipboard_mode: boolean;
   double_tap_modifier: DoubleTapModifier;
   domain_filetypes: Record<string, string>;

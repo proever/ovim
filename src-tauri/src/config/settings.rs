@@ -194,12 +194,6 @@ impl Settings {
         dirs::config_dir().map(|p| p.join("ovim").join("settings.yaml"))
     }
 
-    /// Get the path to the terminal launcher script
-    /// Uses the same directory as other settings (~/Library/Application Support/ovim/)
-    pub fn launcher_script_path() -> Option<PathBuf> {
-        dirs::config_dir().map(|p| p.join("ovim").join("terminal-launcher.sh"))
-    }
-
     /// Get the path to the legacy JSON settings file
     fn legacy_json_path() -> Option<PathBuf> {
         dirs::config_dir().map(|p| p.join("ovim").join("settings.json"))

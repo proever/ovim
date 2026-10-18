@@ -99,9 +99,6 @@ pub struct NvimEditSettings {
     /// Enable live sync (BETA) - sync text field as you type in editor
     #[serde(default)]
     pub live_sync_enabled: bool,
-    /// Use custom launcher script instead of built-in terminal spawning
-    #[serde(default)]
-    pub use_custom_script: bool,
     /// Use clipboard mode (Cmd+A, Cmd+C/V) instead of smart text field detection
     /// When true, always uses clipboard for text capture/restore
     /// When false (default), uses JavaScript for browsers and accessibility API for native apps
@@ -138,7 +135,6 @@ impl Default for NvimEditSettings {
             popup_width: 0, // 0 = match text field width
             popup_height: 300,
             live_sync_enabled: true, // BETA feature, enabled by default
-            use_custom_script: false,
             clipboard_mode: false, // Use smart detection by default
             double_tap_modifier: DoubleTapModifier::Command, // Cmd+Cmd by default
             prewarm_terminal: false,

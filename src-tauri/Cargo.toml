@@ -11,10 +11,6 @@ name = "ti_vim_rust_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
-name = "ovim"
-path = "src/cli.rs"
-
-[[bin]]
 name = "ovim-ax-helper"
 path = "src/bin/ovim_ax_helper.rs"
 

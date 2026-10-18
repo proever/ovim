@@ -1,6 +1,5 @@
 //! iTerm2 terminal spawner
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -26,7 +25,6 @@ impl TerminalSpawner for ITermSpawner {
         file_path: &str,
         geometry: Option<WindowGeometry>,
         socket_path: Option<&Path>,
-        custom_env: Option<&HashMap<String, String>>,
         editor_context: EditorContext<'_>,
     ) -> Result<SpawnInfo, String> {
         let EditorContext { text_is_empty, filetype } = editor_context;
@@ -69,21 +67,6 @@ impl TerminalSpawner for ITermSpawner {
             format!(" {}", escaped_args.join(" "))
         };
 
-        // Build environment export commands for custom env
-        let env_exports = if let Some(env) = custom_env {
-            env.iter()
-                .map(|(k, v)| format!("export {}='{}'", k, v.replace('\'', "'\\''")))
-                .collect::<Vec<_>>()
-                .join("; ")
-        } else {
-            String::new()
-        };
-        let env_prefix = if env_exports.is_empty() {
-            String::new()
-        } else {
-            format!("{}; ", env_exports)
-        };
-
         // Use AppleScript to open iTerm and run editor with position/size
         let script = if let Some(geo) = geometry {
             format!(
@@ -93,7 +76,7 @@ impl TerminalSpawner for ITermSpawner {
                 set newWindow to (create window with default profile)
                 set bounds of newWindow to {{{}, {}, {}, {}}}
                 tell current session of newWindow
-                    write text "{}{}{} '{}'; exit"
+                    write text "{}{} '{}'; exit"
                 end tell
             end tell
             "#,
@@ -101,7 +84,6 @@ impl TerminalSpawner for ITermSpawner {
                 geo.y,
                 geo.x + geo.width as i32,
                 geo.y + geo.height as i32,
-                env_prefix,
                 editor_path,
                 args_str,
                 file_path
@@ -113,11 +95,11 @@ impl TerminalSpawner for ITermSpawner {
                 activate
                 set newWindow to (create window with default profile)
                 tell current session of newWindow
-                    write text "{}{}{} '{}'; exit"
+                    write text "{}{} '{}'; exit"
                 end tell
             end tell
             "#,
-                env_prefix, editor_path, args_str, file_path
+                editor_path, args_str, file_path
             )
         };
 

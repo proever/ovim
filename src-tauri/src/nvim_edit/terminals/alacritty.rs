@@ -1,6 +1,5 @@
 //! Alacritty terminal spawner
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -98,7 +97,6 @@ impl TerminalSpawner for AlacrittySpawner {
         file_path: &str,
         geometry: Option<WindowGeometry>,
         socket_path: Option<&Path>,
-        custom_env: Option<&HashMap<String, String>>,
         editor_context: EditorContext<'_>,
     ) -> Result<SpawnInfo, String> {
         let EditorContext { text_is_empty, filetype } = editor_context;
@@ -106,7 +104,7 @@ impl TerminalSpawner for AlacrittySpawner {
             .with_geometry(geometry.as_ref());
 
         // Reuse the running application, including positioned popups.
-        let child = self.spawn_window(&config, custom_env)?;
+        let child = self.spawn_window(&config)?;
 
         // Find editor PID
         let pid = find_editor_pid_for_file(file_path, settings.editor_process_name());
@@ -134,12 +132,8 @@ impl TerminalSpawner for AlacrittySpawner {
 
 impl AlacrittySpawner {
     /// Reuse Alacritty's IPC server; launch a process only when IPC is unavailable.
-    fn spawn_window(
-        &self,
-        config: &SpawnConfig,
-        custom_env: Option<&HashMap<String, String>>,
-    ) -> Result<Option<std::process::Child>, String> {
-        let args = self.build_msg_args(config, custom_env);
+    fn spawn_window(&self, config: &SpawnConfig) -> Result<Option<std::process::Child>, String> {
+        let args = self.build_msg_args(config);
         match Command::new(&config.terminal_path).args(&args).status() {
             Ok(status) if status.success() => {
                 log::info!("msg create-window succeeded");
@@ -147,17 +141,13 @@ impl AlacrittySpawner {
             }
             _ => {
                 log::info!("msg create-window failed, falling back to regular spawn");
-                self.spawn_new_process(config, custom_env).map(Some)
+                self.spawn_new_process(config).map(Some)
             }
         }
     }
 
     /// Build args for msg create-window command
-    fn build_msg_args(
-        &self,
-        config: &SpawnConfig,
-        custom_env: Option<&HashMap<String, String>>,
-    ) -> Vec<String> {
+    fn build_msg_args(&self, config: &SpawnConfig) -> Vec<String> {
         let mut args = vec![
             "msg".to_string(),
             "create-window".to_string(),
@@ -166,39 +156,19 @@ impl AlacrittySpawner {
         args.extend(self.window_options(config));
 
         args.push("-e".to_string());
-
-        // If we have custom env, wrap in a shell command
-        if let Some(env) = custom_env {
-            if !env.is_empty() {
-                let shell_cmd = self.wrap_with_env(&config.editor_cmd, env);
-                args.extend(["bash".to_string(), "-c".to_string(), shell_cmd]);
-                return args;
-            }
-        }
-
         args.extend(config.editor_cmd.clone());
         args
     }
 
     /// Spawn a new Alacritty process directly
-    fn spawn_new_process(
-        &self,
-        config: &SpawnConfig,
-        custom_env: Option<&HashMap<String, String>>,
-    ) -> Result<std::process::Child, String> {
+    fn spawn_new_process(&self, config: &SpawnConfig) -> Result<std::process::Child, String> {
         let mut args = self.window_options(config);
         args.push("-e".to_string());
         args.extend(config.editor_cmd.clone());
 
-        let mut cmd = Command::new(&config.terminal_path);
-        cmd.args(&args);
-
-        if let Some(env) = custom_env {
-            log::info!("Applying {} custom env vars to alacritty", env.len());
-            cmd.envs(env.iter());
-        }
-
-        cmd.spawn()
+        Command::new(&config.terminal_path)
+            .args(&args)
+            .spawn()
             .map_err(|e| format!("Failed to spawn alacritty: {}", e))
     }
 
@@ -234,19 +204,6 @@ impl AlacrittySpawner {
 
         args
     }
-
-    /// Wrap editor command with environment variable exports
-    fn wrap_with_env(&self, editor_cmd: &[String], env: &HashMap<String, String>) -> String {
-        let mut exports: Vec<String> = env
-            .iter()
-            .map(|(k, v)| format!("export {}={}", k, shell_escape(v)))
-            .collect();
-        exports.push(shell_escape_cmd(editor_cmd));
-        let script = exports.join("; ");
-        log::info!("Shell wrapper script: {}", script);
-        script
-    }
-
 }
 
 /// Result of spawning a pre-warmed Alacritty window
@@ -288,7 +245,7 @@ impl AlacrittySpawner {
             editor_cmd,
             terminal_path,
         };
-        let child = Self.spawn_window(&config, None)?;
+        let child = Self.spawn_window(&config)?;
         let child_pid = child.as_ref().map(std::process::Child::id);
 
         // Wait for nvim to start and create the socket
@@ -339,21 +296,6 @@ fn find_nvim_pid_for_socket(socket_path: &std::path::Path) -> Option<u32> {
     }
 }
 
-/// Escape a string for use in shell
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
-/// Build a shell command from parts
-fn shell_escape_cmd(parts: &[String]) -> String {
-    parts
-        .iter()
-        .map(|s| shell_escape(s))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,8 +313,8 @@ mod tests {
             editor_cmd: vec!["nvim".to_string()],
             terminal_path: "/usr/bin/true".to_string(),
         };
-        assert!(AlacrittySpawner.spawn_window(&config, None).expect("IPC success").is_none());
-        let args = AlacrittySpawner.build_msg_args(&config, None);
+        assert!(AlacrittySpawner.spawn_window(&config).expect("IPC success").is_none());
+        let args = AlacrittySpawner.build_msg_args(&config);
         assert_eq!(&args[..2], &["msg", "create-window"]);
         assert!(args.iter().any(|arg| arg == "window.position={x=200,y=400}"));
     }

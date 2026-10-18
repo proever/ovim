@@ -127,11 +127,6 @@ With AeroSpace running, Ovim automatically floats its own Alacritty popup before
 
 In bmux, live sync keeps trusted keyboard/text input for controlled editors such as X. Temporary replacement selections are hidden only in the edited field, then collapsed and restored after the update, including on failure.
 
-## More features
-
-- Custom launch script - use your own editor. [docs/launcher-script.md](docs/launcher-script.md)
-- CLI - toggle modes via CLI. [docs/cli.md](docs/cli.md)
-
 Check out [full docs](docs/README.md) and the [official website](https://vim.tonis.dev/)
 
 ## Issues
