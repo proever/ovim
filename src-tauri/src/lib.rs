@@ -1,58 +1,28 @@
 // Allow unexpected_cfgs from the objc crate's macros which use cfg(feature = "cargo-clippy")
 #![allow(unexpected_cfgs)]
 
-mod click_mode;
 mod commands;
 mod config;
-pub mod ipc;
 mod keyboard;
-mod keyboard_handler;
-pub mod launcher_callback;
-mod list_mode;
 mod nvim_edit;
-mod scroll_mode;
-mod updater;
-mod vim;
-mod widgets;
+mod shortcut;
 mod window;
-
-use std::sync::{Arc, Mutex};
-
-use tauri::{
-    image::Image,
-    menu::{CheckMenuItem, Menu, MenuItem},
-    tray::TrayIcon,
-    AppHandle, Emitter, Listener, Manager, State,
-};
-
-use click_mode::SharedClickModeManager;
-use commands::RecordedKey;
-use config::click_mode::DoubleTapModifier;
-use config::Settings;
-use ipc::{IpcCommand, IpcResponse};
-use keyboard::{
-    check_accessibility_permission, check_input_monitoring_permission, KeyboardCapture,
-};
-use keyboard_handler::{create_keyboard_callback, KeyboardCallbackContext};
-use keyboard_handler::double_tap::{DoubleTapKey, DoubleTapManager};
-use nvim_edit::prewarm::PrewarmManager;
-use nvim_edit::terminals::install_scripts;
-use nvim_edit::EditSessionManager;
-use scroll_mode::SharedScrollModeState;
-use vim::{VimMode, VimState};
-use window::{setup_click_overlay_window, setup_indicator_window};
 
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
+
+use tauri::{
+    menu::{Menu, MenuItem},
+    AppHandle, Manager,
+};
+
+use config::Settings;
+use keyboard::check_accessibility_permission;
+use nvim_edit::prewarm::PrewarmManager;
+use nvim_edit::EditSessionManager;
 
 static LOG_FILE: OnceLock<Mutex<std::fs::File>> = OnceLock::new();
-static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
-
-/// Get a reference to the global app handle (for emitting events from keyboard handler)
-pub fn get_app_handle() -> Option<&'static AppHandle> {
-    APP_HANDLE.get()
-}
 
 fn init_file_logger() {
     let file = OpenOptions::new()
@@ -89,304 +59,22 @@ fn init_file_logger() {
 /// Application state shared across commands
 pub struct AppState {
     pub settings: Arc<Mutex<Settings>>,
-    pub vim_state: Arc<Mutex<VimState>>,
-    pub keyboard_capture: KeyboardCapture,
-    pub record_key_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<RecordedKey>>>>,
-    #[allow(dead_code)]
-    edit_session_manager: Arc<EditSessionManager>,
-    pub click_mode_manager: SharedClickModeManager,
-    #[allow(dead_code)]
-    pub scroll_state: SharedScrollModeState,
+    pub edit_session_manager: Arc<EditSessionManager>,
 }
 
-fn handle_ipc_command(
-    state: &mut VimState,
-    app_handle: &AppHandle,
-    settings: &Arc<Mutex<Settings>>,
-    edit_session_manager: &Arc<EditSessionManager>,
-    click_mode_manager: &SharedClickModeManager,
-    cmd: IpcCommand,
-) -> IpcResponse {
-    match cmd {
-        IpcCommand::GetMode => IpcResponse::Mode(state.mode().as_str().to_string()),
-        IpcCommand::Toggle => {
-            let new_mode = state.toggle_mode();
-            let _ = app_handle.emit("mode-change", new_mode.as_str());
-            IpcResponse::Mode(new_mode.as_str().to_string())
-        }
-        IpcCommand::Insert => {
-            state.set_mode_external(VimMode::Insert);
-            let _ = app_handle.emit("mode-change", "insert");
-            IpcResponse::Ok
-        }
-        IpcCommand::Normal => {
-            state.set_mode_external(VimMode::Normal);
-            let _ = app_handle.emit("mode-change", "normal");
-            IpcResponse::Ok
-        }
-        IpcCommand::Visual => {
-            state.set_mode_external(VimMode::Visual);
-            let _ = app_handle.emit("mode-change", "visual");
-            IpcResponse::Ok
-        }
-        IpcCommand::SetMode(mode_str) => handle_set_mode(state, app_handle, &mode_str),
-        IpcCommand::EditPopup => {
-            let nvim_settings = {
-                let s = settings.lock().unwrap();
-                if !s.nvim_edit.enabled {
-                    return IpcResponse::Error("Edit Popup is disabled".to_string());
-                }
-                s.nvim_edit.clone()
-            };
-            let manager = Arc::clone(edit_session_manager);
-            let shared_settings = Arc::clone(settings);
-            std::thread::spawn(move || {
-                if let Err(e) = nvim_edit::trigger_nvim_edit(manager, nvim_settings, Some(shared_settings)) {
-                    log::error!("Failed to trigger nvim edit via IPC: {}", e);
-                }
-            });
-            IpcResponse::Ok
-        }
-        IpcCommand::ClickMode => {
-            let is_disabled_for_app = {
-                let s = settings.lock().unwrap();
-                if !s.click_mode.enabled {
-                    return IpcResponse::Error("Click Mode is disabled".to_string());
-                }
-                click_mode::is_disabled_for_frontmost_app(&s.click_mode)
-            };
-            if is_disabled_for_app {
-                return IpcResponse::Error(
-                    "Click Mode is disabled for the frontmost application".to_string(),
-                );
-            }
-
-            // Set click mode to activating state
-            {
-                let mut mgr = click_mode_manager.lock().unwrap();
-                if mgr.is_active() {
-                    return IpcResponse::Error("Click Mode is already active".to_string());
-                }
-                mgr.set_activating();
-            }
-
-            let manager = Arc::clone(click_mode_manager);
-            std::thread::spawn(move || {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let mut mgr = manager.lock().unwrap();
-                    match mgr.activate() {
-                        Ok(elements) => {
-                            log::info!("Click mode activated via IPC with {} elements", elements.len());
-                            let style = click_mode::native_hints::HintStyle::default();
-                            click_mode::native_hints::show_hints(&elements, &style);
-                            if let Some(app) = get_app_handle() {
-                                let _ = app.emit("click-mode-activated", ());
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("Failed to activate click mode via IPC: {}", e);
-                            mgr.deactivate();
-                        }
-                    }
-                }));
-
-                if let Err(e) = result {
-                    log::error!("Panic in click mode activation via IPC: {:?}", e);
-                    if let Ok(mut mgr) = manager.lock() {
-                        mgr.deactivate();
-                    }
-                }
-            });
-            IpcResponse::Ok
-        }
-        IpcCommand::LauncherHandled {
-            session_id,
-            editor_pid,
-        } => {
-            if launcher_callback::signal_handled(&session_id, editor_pid) {
-                log::info!(
-                    "Launcher signaled handled for session {}, pid: {:?}",
-                    session_id,
-                    editor_pid
-                );
-                IpcResponse::Ok
-            } else {
-                log::warn!("Unknown launcher session: {}", session_id);
-                IpcResponse::Error(format!("Unknown session: {}", session_id))
-            }
-        }
-        IpcCommand::LauncherFallthrough { session_id } => {
-            if launcher_callback::signal_fallthrough(&session_id) {
-                log::info!("Launcher signaled fallthrough for session {}", session_id);
-                IpcResponse::Ok
-            } else {
-                log::warn!("Unknown launcher session: {}", session_id);
-                IpcResponse::Error(format!("Unknown session: {}", session_id))
-            }
-        }
-    }
-}
-
-fn handle_set_mode(state: &mut VimState, app_handle: &AppHandle, mode_str: &str) -> IpcResponse {
-    match mode_str.to_lowercase().as_str() {
-        "insert" | "i" => {
-            state.set_mode_external(VimMode::Insert);
-            let _ = app_handle.emit("mode-change", "insert");
-            IpcResponse::Ok
-        }
-        "normal" | "n" => {
-            state.set_mode_external(VimMode::Normal);
-            let _ = app_handle.emit("mode-change", "normal");
-            IpcResponse::Ok
-        }
-        "visual" | "v" => {
-            state.set_mode_external(VimMode::Visual);
-            let _ = app_handle.emit("mode-change", "visual");
-            IpcResponse::Ok
-        }
-        _ => IpcResponse::Error(format!("Unknown mode: {}", mode_str)),
-    }
-}
-
-/// Helper to check if a double-tap key matches a setting
-fn matches_double_tap_setting(setting: &DoubleTapModifier, key: &DoubleTapKey) -> bool {
-    matches!(
-        (setting, key),
-        (DoubleTapModifier::Command, DoubleTapKey::Command)
-            | (DoubleTapModifier::Option, DoubleTapKey::Option)
-            | (DoubleTapModifier::Control, DoubleTapKey::Control)
-            | (DoubleTapModifier::Shift, DoubleTapKey::Shift)
-            | (DoubleTapModifier::Escape, DoubleTapKey::Escape)
-    )
-}
-
-/// Handle double-tap activation for click mode or nvim edit
-fn handle_double_tap_activation(
-    double_tap_key: DoubleTapKey,
-    settings: &Arc<Mutex<Settings>>,
-    click_mode_manager: &SharedClickModeManager,
-    edit_session_manager: &Arc<EditSessionManager>,
-) {
-    let settings_guard = settings.lock().unwrap();
-
-    // Check if this double-tap should trigger click mode
-    let click_mode_trigger = matches_double_tap_setting(
-        &settings_guard.click_mode.double_tap_modifier,
-        &double_tap_key,
-    );
-
-    // Check if this double-tap should trigger nvim edit mode
-    let nvim_edit_trigger = matches_double_tap_setting(
-        &settings_guard.nvim_edit.double_tap_modifier,
-        &double_tap_key,
-    );
-
-    // Don't allow both to be triggered by the same key
-    // Click mode takes priority if both are set to the same key
-    let click_mode_enabled = click_mode_trigger
-        && settings_guard.click_mode.enabled
-        && !click_mode::is_disabled_for_frontmost_app(&settings_guard.click_mode);
-
-    if click_mode_enabled {
-        log::info!("Double-tap {:?} detected - activating click mode", double_tap_key);
-        drop(settings_guard);
-
-        // Activate click mode
-        {
-            let mut mgr = click_mode_manager.lock().unwrap();
-            if !mgr.is_active() {
-                mgr.set_activating();
-            }
-        }
-
-        let manager = Arc::clone(click_mode_manager);
-        let dt_start = std::time::Instant::now();
-        std::thread::spawn(move || {
-            log::info!("[TIMING] double-tap thread spawned at {}ms", dt_start.elapsed().as_millis());
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut mgr = manager.lock().unwrap();
-                log::info!("[TIMING] lock acquired at {}ms", dt_start.elapsed().as_millis());
-                match mgr.activate() {
-                    Ok(elements) => {
-                        log::info!("[TIMING] activate() done at {}ms with {} elements", dt_start.elapsed().as_millis(), elements.len());
-                        let style = click_mode::native_hints::HintStyle::default();
-                        click_mode::native_hints::show_hints(&elements, &style);
-                        log::info!("[TIMING] show_hints() returned at {}ms", dt_start.elapsed().as_millis());
-                        if let Some(app) = get_app_handle() {
-                            let _ = app.emit("click-mode-activated", ());
-                            log::info!("[TIMING] emit done at {}ms", dt_start.elapsed().as_millis());
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to activate click mode via double-tap: {}", e);
-                        mgr.deactivate();
-                    }
-                }
-            }));
-
-            if let Err(e) = result {
-                log::error!("Panic in click mode activation via double-tap: {:?}", e);
-                if let Ok(mut mgr) = manager.lock() {
-                    mgr.deactivate();
-                }
-            }
-        });
-    } else if nvim_edit_trigger && settings_guard.nvim_edit.enabled {
-        log::info!("Double-tap {:?} detected - activating nvim edit", double_tap_key);
-        let nvim_settings = settings_guard.nvim_edit.clone();
-        let shared_settings = Arc::clone(settings);
-        drop(settings_guard);
-
-        // Trigger nvim edit
-        let manager = Arc::clone(edit_session_manager);
-        std::thread::spawn(move || {
-            if let Err(e) = nvim_edit::trigger_nvim_edit(manager, nvim_settings, Some(shared_settings)) {
-                log::error!("Failed to trigger nvim edit via double-tap: {}", e);
-            }
-        });
-    }
-}
-
-fn update_tray_icon(tray: &TrayIcon, mode: &str, show_mode: bool) {
-    let icon_bytes: &[u8] = if show_mode {
-        match mode {
-            "insert" => include_bytes!("../icons/tray-icon-insert.png"),
-            "normal" => include_bytes!("../icons/tray-icon-normal.png"),
-            "visual" => include_bytes!("../icons/tray-icon-visual.png"),
-            _ => include_bytes!("../icons/tray-icon.png"),
-        }
-    } else {
-        include_bytes!("../icons/tray-icon.png")
-    };
-
-    match image::load_from_memory(icon_bytes) {
-        Ok(img) => {
-            let rgba = img.to_rgba8();
-            let (width, height) = rgba.dimensions();
-            let icon = Image::new_owned(rgba.into_raw(), width, height);
-            if let Err(e) = tray.set_icon(Some(icon)) {
-                log::error!("Failed to set tray icon: {}", e);
-            }
-        }
-        Err(e) => {
-            log::error!("Failed to decode tray icon: {}", e);
-        }
-    }
-}
-
-fn show_settings_window(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("settings") else {
-        log::error!("Settings window is unavailable");
+fn show_window(app: &AppHandle, label: &str) {
+    let Some(window) = app.get_webview_window(label) else {
+        log::error!("Window '{}' is unavailable", label);
         return;
     };
 
     if let Err(error) = window.show() {
-        log::error!("Failed to show settings window: {}", error);
+        log::error!("Failed to show window '{}': {}", label, error);
         return;
     }
 
     if let Err(error) = window.set_focus() {
-        log::error!("Failed to focus settings window: {}", error);
+        log::error!("Failed to focus window '{}': {}", label, error);
     }
 }
 
@@ -411,317 +99,70 @@ pub fn run() {
     init_file_logger();
     log::info!("ovim-rust started");
 
-    // Initialize the accessibility helper binary
-    click_mode::accessibility::init_helper();
-
-    // Pre-create hint window pool for fast click mode activation
-    click_mode::native_hints::init_pool();
-
-    let (vim_state, mode_rx) = VimState::new();
-    let vim_state = Arc::new(Mutex::new(vim_state));
-
-    let settings = Arc::new(Mutex::new(Settings::load()));
-
-    // Initialize click mode settings from loaded settings
-    {
-        let s = settings.lock().unwrap();
-        click_mode::accessibility::update_timing_settings(
-            s.click_mode.cache_ttl_ms,
-            s.click_mode.ax_stabilization_delay_ms,
-            s.click_mode.max_depth,
-            s.click_mode.max_elements,
-        );
-    }
-
-    let record_key_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<RecordedKey>>>> =
-        Arc::new(Mutex::new(None));
+    let settings = Settings::load();
     let mut edit_session_manager = EditSessionManager::new();
 
     // Initialize prewarm manager if enabled and using alacritty
-    {
-        let s = settings.lock().unwrap();
-        if s.nvim_edit.prewarm_terminal && s.nvim_edit.terminal == "alacritty" {
-            log::info!("Pre-warming terminal enabled, spawning hidden Alacritty");
-            let prewarm = Arc::new(PrewarmManager::new());
-            let settings_clone = s.nvim_edit.clone();
-            let prewarm_clone = Arc::clone(&prewarm);
-            std::thread::spawn(move || {
-                prewarm_clone.spawn_prewarm(&settings_clone);
-            });
-            edit_session_manager.set_prewarm_manager(prewarm);
-        }
-    }
-
-    let edit_session_manager = Arc::new(edit_session_manager);
-    let click_mode_manager = click_mode::create_manager();
-    let double_tap_manager = Arc::new(Mutex::new(DoubleTapManager::new()));
-    let scroll_state = scroll_mode::create_scroll_state();
-    let list_state = list_mode::create_list_state();
-
-    // Create double-tap callback that handles mode activation
-    let double_tap_callback = {
-        let settings_for_dt = Arc::clone(&settings);
-        let click_manager_for_dt = Arc::clone(&click_mode_manager);
-        let edit_session_manager_for_dt = Arc::clone(&edit_session_manager);
-
-        Box::new(move |double_tap_key: DoubleTapKey| {
-            handle_double_tap_activation(
-                double_tap_key,
-                &settings_for_dt,
-                &click_manager_for_dt,
-                &edit_session_manager_for_dt,
-            );
-        }) as keyboard_handler::DoubleTapCallback
-    };
-
-    let keyboard_capture = KeyboardCapture::new();
-    keyboard_capture.set_callback(create_keyboard_callback(KeyboardCallbackContext {
-        vim_state: Arc::clone(&vim_state),
-        settings: Arc::clone(&settings),
-        record_key_tx: Arc::clone(&record_key_tx),
-        edit_session_manager: Arc::clone(&edit_session_manager),
-        click_mode_manager: Arc::clone(&click_mode_manager),
-        double_tap_manager: Arc::clone(&double_tap_manager),
-        double_tap_callback,
-        scroll_state: Arc::clone(&scroll_state),
-        list_state: Arc::clone(&list_state),
-    }));
-
-    // Set up mouse click callback to hide click mode on any mouse click
-    {
-        let click_manager_for_mouse = Arc::clone(&click_mode_manager);
-        keyboard_capture.set_mouse_callback(move |_event| {
-            if click_mode::deactivate_and_notify(&click_manager_for_mouse) {
-                log::info!("Mouse click detected - deactivating click mode");
-            }
-            true // Always pass through mouse events
+    if settings.nvim_edit.prewarm_terminal && settings.nvim_edit.terminal == "alacritty" {
+        log::info!("Pre-warming terminal enabled, spawning hidden Alacritty");
+        let prewarm = Arc::new(PrewarmManager::new());
+        let settings_clone = settings.nvim_edit.clone();
+        let prewarm_clone = Arc::clone(&prewarm);
+        std::thread::spawn(move || {
+            prewarm_clone.spawn_prewarm(&settings_clone);
         });
+        edit_session_manager.set_prewarm_manager(prewarm);
     }
-
-    // Set up scroll callback to hide click mode on scroll
-    {
-        let click_manager_for_scroll = Arc::clone(&click_mode_manager);
-        keyboard_capture.set_scroll_callback(move || {
-            if click_mode::deactivate_and_notify(&click_manager_for_scroll) {
-                log::info!("Scroll detected - deactivating click mode");
-            }
-        });
-    }
-
-    // Set up flags changed callback for double-tap modifier shortcuts
-    {
-        let settings_for_flags = Arc::clone(&settings);
-        let click_manager_for_flags = Arc::clone(&click_mode_manager);
-        let edit_session_manager_for_flags = Arc::clone(&edit_session_manager);
-        let double_tap_manager_for_flags = Arc::clone(&double_tap_manager);
-
-        keyboard_capture.set_flags_changed_callback(move |modifiers| {
-            let mut dt_manager = double_tap_manager_for_flags.lock().unwrap();
-
-            // Process the flags change and check for double-tap
-            if let Some(double_tap_key) = dt_manager.process_flags_changed(
-                modifiers.command,
-                modifiers.option,
-                modifiers.control,
-                modifiers.shift,
-            ) {
-                drop(dt_manager);
-                handle_double_tap_activation(
-                    double_tap_key,
-                    &settings_for_flags,
-                    &click_manager_for_flags,
-                    &edit_session_manager_for_flags,
-                );
-            }
-        });
-    }
-
-    // Set up focus change observer to hide click mode when app loses focus
-    // and prefetch elements for the new app
-    {
-        let click_manager_for_focus = Arc::clone(&click_mode_manager);
-        click_mode::start_focus_observer(move || {
-            click_mode::accessibility::invalidate_cache();
-
-            if click_mode::deactivate_and_notify(&click_manager_for_focus) {
-                log::info!("App focus changed - deactivating click mode");
-            }
-
-            click_mode::accessibility::prefetch_elements();
-        });
-    }
-
-    // Clone for IPC handler before moving into app_state
-    let settings_for_ipc = Arc::clone(&settings);
-    let edit_session_manager_for_ipc = Arc::clone(&edit_session_manager);
-    let click_mode_manager_for_ipc = Arc::clone(&click_mode_manager);
 
     let app_state = AppState {
-        settings,
-        vim_state: Arc::clone(&vim_state),
-        keyboard_capture,
-        record_key_tx,
-        edit_session_manager,
-        click_mode_manager,
-        scroll_state,
+        settings: Arc::new(Mutex::new(settings)),
+        edit_session_manager: Arc::new(edit_session_manager),
     };
 
-    let mode_rx = Arc::new(Mutex::new(mode_rx));
-
     let app = tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(shortcut::plugin())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
-            commands::check_permission,
             commands::get_permission_status,
             commands::complete_permission_setup,
             commands::open_accessibility_settings,
-            commands::open_input_monitoring_settings,
-            commands::get_vim_mode,
             commands::get_settings,
             commands::set_settings,
-            commands::start_capture,
-            commands::stop_capture,
-            commands::is_capture_running,
-            commands::open_settings_window,
-            commands::pick_app,
-            commands::get_selection_info,
-            commands::get_battery_info,
-            commands::get_caps_lock_state,
-            commands::run_shell_widget,
-            commands::get_pending_keys,
+            commands::get_version,
             commands::get_key_display_name,
-            commands::record_key,
-            commands::cancel_record_key,
-            commands::webview_log,
+            commands::shortcut_key_from_code,
+            commands::set_shortcut_paused,
+            commands::get_shortcut_error,
             commands::validate_nvim_edit_paths,
-            commands::open_launcher_script,
             commands::remove_domain_filetype,
             commands::get_domain_filetypes,
-            commands::set_indicator_ignores_mouse,
-            commands::is_command_key_pressed,
-            commands::is_mouse_over_indicator,
-            commands::toggle_indicator_visible,
-            commands::get_version,
-            commands::check_for_update,
-            commands::restart_app,
-            commands::set_indicator_clickable,
-            // Click mode commands
-            commands::activate_click_mode,
-            commands::deactivate_click_mode,
-            commands::get_click_mode_state,
-            commands::click_mode_click_element,
-            commands::click_mode_right_click_element,
-            commands::click_mode_input_hint,
-            commands::get_click_mode_elements,
         ])
-        .setup(move |app| {
-            let show_in_dock = app
-                .state::<AppState>()
-                .settings
-                .lock()
-                .unwrap()
-                .show_in_dock;
-            if let Err(error) = apply_activation_policy(app.handle(), show_in_dock) {
+        .setup(|app| {
+            let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+
+            if let Err(error) = apply_activation_policy(app.handle(), settings.show_in_dock) {
                 log::error!("Failed to apply Dock icon preference: {}", error);
             }
 
-            // Store app handle for global access (used by keyboard handler for events)
-            let _ = APP_HANDLE.set(app.handle().clone());
+            shortcut::register(app.handle(), &settings.nvim_edit);
 
-            // Initialize launcher callback registry
-            launcher_callback::init();
-
-            let initial_indicator_visible = Settings::load().indicator_visible;
-            let show_indicator_item = CheckMenuItem::with_id(
-                app,
-                "show_indicator",
-                "Show floating indicator",
-                true,
-                initial_indicator_visible,
-                None::<&str>,
-            )?;
             let settings_item =
                 MenuItem::with_id(app, "settings", "Settings...", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_indicator_item, &settings_item, &quit_item])?;
+            let menu = Menu::with_items(app, &[&settings_item, &quit_item])?;
 
             if let Some(tray) = app.tray_by_id("main") {
                 tray.set_menu(Some(menu))?;
                 tray.on_menu_event(|app, event| match event.id.as_ref() {
-                    "show_indicator" => {
-                        let state: State<AppState> = app.state();
-                        let mut settings = state.settings.lock().unwrap();
-                        settings.indicator_visible = !settings.indicator_visible;
-                        let _ = settings.save();
-                        let new_settings = settings.clone();
-                        drop(settings);
-                        let _ = app.emit("settings-changed", new_settings);
-                    }
-                    "settings" => {
-                        show_settings_window(app);
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
+                    "settings" => show_window(app, "settings"),
+                    "quit" => app.exit(0),
                     _ => {}
                 });
 
-                let initial_settings = Settings::load();
-                if let Err(e) = tray.set_visible(initial_settings.show_in_menu_bar) {
+                if let Err(e) = tray.set_visible(settings.show_in_menu_bar) {
                     log::error!("Failed to set initial tray visibility: {}", e);
                 }
-
-                let tray_clone = tray.clone();
-                let show_indicator_item_clone = show_indicator_item.clone();
-                app.listen("settings-changed", move |event| {
-                    if let Ok(new_settings) = serde_json::from_str::<Settings>(event.payload()) {
-                        if let Err(e) = tray_clone.set_visible(new_settings.show_in_menu_bar) {
-                            log::error!("Failed to update tray visibility: {}", e);
-                        }
-                        // Sync the check menu item with indicator_visible setting
-                        let _ = show_indicator_item_clone.set_checked(new_settings.indicator_visible);
-                        // Update tray icon when show_mode_in_menu_bar changes
-                        update_tray_icon(&tray_clone, "insert", new_settings.show_mode_in_menu_bar);
-                    }
-                });
-
-                // Listen for mode changes to update tray icon
-                let tray_for_mode = tray.clone();
-                let app_handle_for_tray = app.handle().clone();
-                app.listen("mode-change", move |event| {
-                    let mode = event.payload().trim_matches('"');
-                    let state: State<AppState> = app_handle_for_tray.state();
-                    let show_mode = state.settings.lock().map(|s| s.show_mode_in_menu_bar).unwrap_or(false);
-                    update_tray_icon(&tray_for_mode, mode, show_mode);
-                });
-            }
-
-            if let Some(indicator_window) = app.get_webview_window("indicator") {
-                if let Err(e) = setup_indicator_window(&indicator_window) {
-                    log::error!("Failed to setup indicator window: {}", e);
-                }
-            }
-
-            // Set up click overlay window (hidden initially)
-            if let Some(click_overlay) = app.get_webview_window("click-overlay") {
-                if let Err(e) = setup_click_overlay_window(&click_overlay) {
-                    log::error!("Failed to setup click overlay window: {}", e);
-                }
-
-                // When the overlay window loses focus (user clicked another window),
-                // deactivate click mode so the indicator doesn't get stuck.
-                let app_handle_for_overlay = app.handle().clone();
-                click_overlay.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Focused(false) = event {
-                        let state: State<AppState> = app_handle_for_overlay.state();
-                        if click_mode::deactivate_and_notify(&state.click_mode_manager) {
-                            log::info!("Click overlay lost focus - deactivating click mode");
-                        }
-                    }
-                });
             }
 
             if let Some(settings_window) = app.get_webview_window("settings") {
@@ -745,62 +186,10 @@ pub fn run() {
                 });
             }
 
-            let app_handle = app.handle().clone();
-            let mut rx = mode_rx.lock().unwrap().resubscribe();
-
-            tauri::async_runtime::spawn(async move {
-                while let Ok(mode) = rx.recv().await {
-                    log::info!("Mode changed to: {:?}", mode);
-                    let _ = app_handle.emit("mode-change", mode.as_str());
-                }
-            });
-
-            if check_accessibility_permission() && check_input_monitoring_permission() {
-                let state: State<AppState> = app.state();
-                if let Err(e) = state.keyboard_capture.start() {
-                    log::error!("Failed to start keyboard capture: {}", e);
-                } else {
-                    log::info!("Keyboard capture started automatically");
-                }
-            } else {
-                log::warn!("Required macOS permissions are not granted");
-                if let Some(window) = app.get_webview_window("permissions") {
-                    if let Err(error) = window.show() {
-                        log::error!("Failed to show permission setup window: {}", error);
-                    } else if let Err(error) = window.set_focus() {
-                        log::error!("Failed to focus permission setup window: {}", error);
-                    }
-                }
+            if !check_accessibility_permission() {
+                log::warn!("Accessibility permission is not granted");
+                show_window(app.handle(), "permissions");
             }
-
-            // Install launcher and sample scripts to config directory
-            if let Err(e) = install_scripts(app.handle()) {
-                log::warn!("Failed to install scripts: {}", e);
-            }
-
-            let vim_state_for_ipc2 = Arc::clone(&vim_state);
-            let app_handle_for_ipc = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let handler = move |cmd: IpcCommand| -> IpcResponse {
-                    let mut state = vim_state_for_ipc2.lock().unwrap();
-                    handle_ipc_command(
-                        &mut state,
-                        &app_handle_for_ipc,
-                        &settings_for_ipc,
-                        &edit_session_manager_for_ipc,
-                        &click_mode_manager_for_ipc,
-                        cmd,
-                    )
-                };
-
-                if let Err(e) = ipc::start_ipc_server(handler).await {
-                    log::error!("IPC server error: {}", e);
-                }
-            });
-
-            // Start periodic update checker
-            let state: State<AppState> = app.state();
-            updater::start_update_checker(app.handle().clone(), Arc::clone(&state.settings));
 
             Ok(())
         })
@@ -811,7 +200,7 @@ pub fn run() {
         #[cfg(target_os = "macos")]
         if let tauri::RunEvent::Reopen { .. } = event {
             log::info!("Application reopened - showing settings");
-            show_settings_window(app);
+            show_window(app, "settings");
         }
     });
 }

@@ -1,25 +1,18 @@
-//! Key recording and display Tauri commands
+//! Edit Popup shortcut commands
 
-use tauri::State;
+use std::str::FromStr;
+
+use tauri::{AppHandle, State};
+use tauri_plugin_global_shortcut::Code;
 
 use crate::keyboard::KeyCode;
 use crate::AppState;
 
-/// Recorded key info returned to frontend
+/// A key that can be used in the Edit Popup shortcut
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct RecordedKey {
+pub struct ShortcutKey {
     pub name: String,
     pub display_name: String,
-    pub modifiers: RecordedModifiers,
-}
-
-/// Modifier state for recorded key
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct RecordedModifiers {
-    pub shift: bool,
-    pub control: bool,
-    pub option: bool,
-    pub command: bool,
 }
 
 #[tauri::command]
@@ -27,20 +20,29 @@ pub fn get_key_display_name(key_name: String) -> Option<String> {
     KeyCode::from_name(&key_name).map(|k| k.to_display_name().to_string())
 }
 
+/// Map a DOM `KeyboardEvent.code` (e.g. "KeyE") to the key stored in settings
 #[tauri::command]
-pub async fn record_key(state: State<'_, AppState>) -> Result<RecordedKey, String> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
+pub fn shortcut_key_from_code(code: String) -> Option<ShortcutKey> {
+    let key = KeyCode::from_code(Code::from_str(&code).ok()?)?;
+    Some(ShortcutKey {
+        name: key.to_name().to_string(),
+        display_name: key.to_display_name().to_string(),
+    })
+}
 
-    {
-        let mut record_tx = state.record_key_tx.lock().unwrap();
-        *record_tx = Some(tx);
+/// Release the shortcut while the settings window records a new one, so the
+/// key press reaches the window instead of opening the popup.
+#[tauri::command]
+pub fn set_shortcut_paused(app: AppHandle, state: State<AppState>, paused: bool) {
+    if paused {
+        crate::shortcut::unregister(&app);
+    } else {
+        let nvim_edit = state.settings.lock().unwrap().nvim_edit.clone();
+        crate::shortcut::register(&app, &nvim_edit);
     }
-
-    rx.await.map_err(|_| "Key recording cancelled".to_string())
 }
 
 #[tauri::command]
-pub fn cancel_record_key(state: State<AppState>) {
-    let mut record_tx = state.record_key_tx.lock().unwrap();
-    *record_tx = None;
+pub fn get_shortcut_error() -> Option<String> {
+    crate::shortcut::registration_error()
 }

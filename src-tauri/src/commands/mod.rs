@@ -1,21 +1,11 @@
 //! Tauri command handlers
 
-mod click_mode;
-mod indicator;
 mod keys;
 mod permissions;
 mod settings;
-mod updater;
 mod validation;
-mod vim_mode;
-mod widgets;
 
-pub use click_mode::*;
-pub use indicator::*;
 pub use keys::*;
 pub use permissions::*;
 pub use settings::*;
-pub use updater::*;
 pub use validation::*;
-pub use vim_mode::*;
-pub use widgets::*;

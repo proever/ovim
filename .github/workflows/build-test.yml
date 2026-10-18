@@ -5,21 +5,16 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build macOS app (universal)
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: "macos-latest"
-            target: aarch64-apple-darwin
-          - platform: "macos-latest"
-            target: x86_64-apple-darwin
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: macos-latest
+    env:
+      BUNDLE_DIR: src-tauri/target/universal-apple-darwin/release/bundle
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,13 +22,13 @@ jobs:
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          shared-key: ${{ matrix.target }}
+          shared-key: universal-apple-darwin
           save-if: ${{ github.ref == 'refs/heads/main' || github.event_name == 'pull_request' }}
 
       - name: Setup Node.js
@@ -46,7 +41,7 @@ jobs:
 
       - name: Get pnpm store directory
         shell: bash
-        run: echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_ENV"
 
       - name: Cache pnpm store
         uses: actions/cache@v4
@@ -59,10 +54,55 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Build Tauri app
-        run: pnpm tauri build --target ${{ matrix.target }} --no-bundle
+      # There are no signing secrets, so sign ad hoc to give the bundle a valid
+      # signature. Hardened runtime stays off because, without an Apple Events
+      # entitlement, it can block the AppleScript ovim runs against browsers
+      # and terminals.
+      - name: Build app and DMG
+        run: >-
+          pnpm tauri build --target universal-apple-darwin --bundles app,dmg
+          --config '{"bundle":{"macOS":{"signingIdentity":"-","hardenedRuntime":false}}}'
         env:
           CI: true
+
+      - name: Verify app and DMG
+        run: |
+          app="$BUNDLE_DIR/macos/ovim.app"
+          executable=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$app/Contents/Info.plist")
+          archs=$(lipo -archs "$app/Contents/MacOS/$executable")
+          echo "Architectures: $archs"
+          [[ "$archs" == *x86_64* && "$archs" == *arm64* ]]
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=2 "$app"
+
+          dmg=$(find "$BUNDLE_DIR/dmg" -name "*.dmg" | head -1)
+          hdiutil verify "$dmg"
+          mount_point=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount_point" "$dmg"
+          codesign --verify --deep --strict "$mount_point/ovim.app"
+          hdiutil detach "$mount_point"
+
+      - name: Zip app bundle
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          ditto -c -k --keepParent "$BUNDLE_DIR/macos/ovim.app" "$BUNDLE_DIR/ovim_${version}_universal.app.zip"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: ovim-macos-universal-dmg
+          path: ${{ env.BUNDLE_DIR }}/dmg/*.dmg
+          compression-level: 0
+          if-no-files-found: error
+
+      # ditto keeps the executable bit, which upload-artifact drops from a bare .app
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: ovim-macos-universal-app
+          path: ${{ env.BUNDLE_DIR }}/*.app.zip
+          compression-level: 0
+          if-no-files-found: error
 
   test:
     permissions:

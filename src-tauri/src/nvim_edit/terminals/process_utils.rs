@@ -12,7 +12,7 @@ pub fn find_editor_pid_for_file(file_path: &str, process_name: &str) -> Option<u
 }
 
 /// Find the editor process editing a specific file (no delay, for polling)
-pub fn find_editor_pid_for_file_no_delay(file_path: &str, process_name: &str) -> Option<u32> {
+fn find_editor_pid_for_file_no_delay(file_path: &str, process_name: &str) -> Option<u32> {
     // Use lsof to find the process that has our file open
     let output = Command::new("lsof").args(["-t", file_path]).output().ok()?;
 

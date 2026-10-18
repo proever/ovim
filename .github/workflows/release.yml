@@ -104,12 +104,10 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Build Tauri app (without updater signing)
+      - name: Build Tauri app
         run: pnpm tauri build ${{ matrix.args }}
         env:
           CI: true
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload unsigned app bundle
         uses: actions/upload-artifact@v4
@@ -118,63 +116,6 @@ jobs:
           path: |
             src-tauri/target/*/release/bundle/macos/*.app
           retention-days: 1
-
-      - name: Upload tar.gz for updater signing
-        uses: actions/upload-artifact@v4
-        with:
-          name: updater-unsigned-${{ matrix.arch }}
-          path: |
-            src-tauri/target/*/release/bundle/macos/*.app.tar.gz
-          retention-days: 1
-
-  # Sign updater artifacts with Tauri key
-  sign-updater:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: 'aarch64'
-          - arch: 'x64'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download unsigned tar.gz
-        uses: actions/download-artifact@v4
-        with:
-          name: updater-unsigned-${{ matrix.arch }}
-          path: updater
-
-      - name: Sign updater artifact
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          TAR_GZ=$(find updater -name "*.app.tar.gz" | head -1)
-          echo "Signing: $TAR_GZ"
-          npx --yes @tauri-apps/cli@latest signer sign "$TAR_GZ" --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
-          ls -la updater/
-
-      - name: Upload updater artifacts to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAR_GZ=$(find updater -name "*.app.tar.gz" | head -1)
-          SIG=$(find updater -name "*.app.tar.gz.sig" | head -1)
-
-          if [ -n "$TAR_GZ" ]; then
-            cp "$TAR_GZ" "ovim_${{ matrix.arch }}.app.tar.gz"
-            gh release upload "${{ github.ref_name }}" "ovim_${{ matrix.arch }}.app.tar.gz" --clobber --repo "${{ github.repository }}"
-          fi
-
-          if [ -n "$SIG" ]; then
-            cp "$SIG" "ovim_${{ matrix.arch }}.app.tar.gz.sig"
-            gh release upload "${{ github.ref_name }}" "ovim_${{ matrix.arch }}.app.tar.gz.sig" --clobber --repo "${{ github.repository }}"
-          fi
 
   # Sign and notarize the app
   sign:
@@ -191,6 +132,9 @@ jobs:
             target: 'x86_64-apple-darwin'
 
     runs-on: macos-latest
+    env:
+      # Forks without the Apple secrets get an ad hoc signed, unnotarized DMG.
+      HAS_SIGNING_SECRETS: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -205,7 +149,7 @@ jobs:
         id: find-app
         run: |
           APP_PATH=$(find bundle -name "*.app" -type d | head -1)
-          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "Found app at: $APP_PATH"
 
       - name: Fix executable permissions
@@ -213,12 +157,14 @@ jobs:
           chmod +x "${{ steps.find-app.outputs.app_path }}/Contents/MacOS/"*
 
       - name: Import Code-Signing Certificates
+        if: env.HAS_SIGNING_SECRETS == 'true'
         uses: Apple-Actions/import-codesign-certs@v2
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: List signing identities
+        if: env.HAS_SIGNING_SECRETS == 'true'
         run: |
           echo "=== Available signing identities ==="
           security find-identity -v -p codesigning
@@ -226,6 +172,7 @@ jobs:
           echo "=== Looking for identity: ${{ secrets.APPLE_SIGNING_IDENTITY }} ==="
 
       - name: Sign the app
+        if: env.HAS_SIGNING_SECRETS == 'true'
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -237,7 +184,14 @@ jobs:
           echo "Verifying signature..."
           codesign --verify --deep --strict "${{ steps.find-app.outputs.app_path }}"
 
+      - name: Sign the app ad hoc
+        if: env.HAS_SIGNING_SECRETS != 'true'
+        run: |
+          codesign --deep --force --sign - "${{ steps.find-app.outputs.app_path }}"
+          codesign --verify --deep --strict "${{ steps.find-app.outputs.app_path }}"
+
       - name: Notarize the app
+        if: env.HAS_SIGNING_SECRETS == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -273,6 +227,7 @@ jobs:
             "${{ steps.find-app.outputs.app_path }}"
 
       - name: Sign DMG
+        if: env.HAS_SIGNING_SECRETS == 'true'
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -283,112 +238,3 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ github.ref_name }}" "ovim_${{ matrix.arch }}.dmg" --clobber --repo "${{ github.repository }}"
-
-  # Generate latest.json for updater
-  generate-latest-json:
-    needs: [sign, sign-updater]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download signatures
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Download signature files
-          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ovim_aarch64.app.tar.gz.sig" -o sig-arm.txt
-          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ovim_x64.app.tar.gz.sig" -o sig-intel.txt
-
-          echo "SIG_ARM=$(cat sig-arm.txt)" >> $GITHUB_ENV
-          echo "SIG_INTEL=$(cat sig-intel.txt)" >> $GITHUB_ENV
-
-      - name: Create latest.json
-        run: |
-          VERSION="${{ github.ref_name }}"
-          # Remove 'v' prefix if present for version field
-          VERSION_NUM="${VERSION#v}"
-
-          cat > latest.json << EOF
-          {
-            "version": "${VERSION_NUM}",
-            "notes": "See release notes at https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}",
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "darwin-aarch64": {
-                "signature": "${SIG_ARM}",
-                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ovim_aarch64.app.tar.gz"
-              },
-              "darwin-x86_64": {
-                "signature": "${SIG_INTEL}",
-                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/ovim_x64.app.tar.gz"
-              }
-            }
-          }
-          EOF
-
-          cat latest.json
-
-      - name: Upload latest.json to release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload "${{ github.ref_name }}" latest.json --clobber --repo "${{ github.repository }}"
-
-  # Update Homebrew tap with new SHA256 checksums
-  update-homebrew:
-    needs: [sign, generate-latest-json]
-    runs-on: macos-15
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    env:
-      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
-    steps:
-      - name: Download exact release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir release-assets
-          version="${RELEASE_TAG#v}"
-          for name in ovim_aarch64.dmg ovim_x64.dmg; do
-            gh release download "$RELEASE_TAG" --pattern "$name" --dir release-assets --repo "$GITHUB_REPOSITORY"
-            test -s "release-assets/$name"
-            case "$name" in
-              *.dmg) hdiutil verify "release-assets/$name" ;;
-              *.tar.gz) tar -tzf "release-assets/$name" >/dev/null ;;
-            esac
-          done
-
-      - name: Checkout Homebrew tap
-        uses: actions/checkout@v4
-        with:
-          repository: tonisives/homebrew-tap
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: homebrew-tap
-
-      - name: Update tap from verified assets
-        run: |
-          python3 homebrew-tap/scripts/update_release.py \
-            --product ovim --tag "$RELEASE_TAG" \
-            --assets release-assets --tap homebrew-tap
-
-      - name: Verify Homebrew entries before publishing
-        run: |
-          set -euo pipefail
-          brew tap tonisives/tap
-          if brew help trust >/dev/null 2>&1; then brew trust --tap tonisives/tap; fi
-          tap_dir="$(brew --repository tonisives/tap)"
-          cp homebrew-tap/Casks/ovim.rb "$tap_dir/Casks/ovim.rb"
-          brew style homebrew-tap/Casks/ovim.rb
-          brew audit --cask --strict tonisives/tap/ovim
-          brew fetch --cask tonisives/tap/ovim
-
-      - name: Commit and push
-        working-directory: homebrew-tap
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/ovim.rb
-          git diff --staged --quiet || git commit -m "Update ovim to $RELEASE_TAG"
-          git push

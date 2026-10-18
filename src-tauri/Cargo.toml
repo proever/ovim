@@ -1,7 +1,7 @@
 [package]
 name = "ovim-rust"
 version = "0.1.0"
-description = "System-wide Vim mode for macOS"
+description = "Edit any macOS text field in Neovim"
 authors = ["tonis"]
 edition = "2021"
 default-run = "ovim-rust"
@@ -10,65 +10,44 @@ default-run = "ovim-rust"
 name = "ti_vim_rust_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-[[bin]]
-name = "ovim"
-path = "src/cli.rs"
-
-[[bin]]
-name = "ovim-ax-helper"
-path = "src/bin/ovim_ax_helper.rs"
-
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
-tauri-plugin-opener = "2"
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
-tauri-plugin-updater = "2"
+tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0"
 
-# macOS frameworks for keyboard capture
-core-graphics = { version = "0.25", features = ["highsierra"] }
+# macOS frameworks for synthesized key presses and accessibility
+core-graphics = "0.25"
 core-foundation = "0.10"
 
-# Async runtime
-tokio = { version = "1", features = ["sync", "rt", "net", "io-util", "macros"] }
+# Async runtime for the Neovim RPC connection
+tokio = { version = "1", features = ["rt", "time", "net", "io-util"] }
 
-# Neovim RPC for live buffer sync
+# Neovim RPC for cursor placement and filetype tracking
 nvim-rs = { version = "0.9", features = ["use_tokio"] }
-async-trait = "0.1"
 
 # Logging
 log = "0.4"
 env_logger = "0.11"
 chrono = "0.4"
 
-# Error handling
-thiserror = "2"
-anyhow = "1"
-
 # Directories
 dirs = "6"
-
-# Image decoding for tray icons
-image = "0.25"
 
 # UUID for session IDs
 uuid = { version = "1", features = ["v4"] }
 
 # Low-level system calls
 libc = "0.2"
-dispatch = "0.2.0"
-base64 = "0.22.1"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
 objc = "0.2.7"
-objc_exception = "0.1"
-block = "0.1"
 
 [features]
 default = ["custom-protocol"]
@@ -83,8 +62,6 @@ all = "deny"
 # Selectively enable useful pedantic lints
 needless_pass_by_ref_mut = "deny"
 
-# For the ax-helper subprocess, use panic=abort to avoid the
-# "Rust cannot catch foreign exceptions" error when ObjC exceptions occur
 [profile.release]
 panic = "abort"
 

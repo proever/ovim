@@ -1,28 +1,22 @@
 //! WezTerm terminal spawner
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
 use super::applescript_utils::set_window_size;
 use super::process_utils::{resolve_command_path, resolve_terminal_path};
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 pub struct WezTermSpawner;
 
 impl TerminalSpawner for WezTermSpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::WezTerm
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
         file_path: &str,
         geometry: Option<WindowGeometry>,
         socket_path: Option<&Path>,
-        custom_env: Option<&HashMap<String, String>>,
         editor_context: EditorContext<'_>,
     ) -> Result<SpawnInfo, String> {
         let EditorContext { text_is_empty, filetype } = editor_context;
@@ -89,11 +83,6 @@ impl TerminalSpawner for WezTermSpawner {
         }
         cmd.arg(file_path);
 
-        // Apply custom environment variables
-        if let Some(env) = custom_env {
-            cmd.envs(env.iter());
-        }
-
         let child = cmd
             .spawn()
             .map_err(|e| format!("Failed to spawn wezterm: {}", e))?;
@@ -113,11 +102,6 @@ impl TerminalSpawner for WezTermSpawner {
             });
         }
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::WezTerm,
-            process_id: Some(wezterm_pid),
-            child: Some(child),
-            window_title: None,
-        })
+        Ok(SpawnInfo { process_id: Some(wezterm_pid) })
     }
 }

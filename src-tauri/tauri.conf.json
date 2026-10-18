@@ -11,7 +11,6 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "macOSPrivateApi": true,
     "trayIcon": {
       "id": "main",
       "iconPath": "icons/tray-icon.png",
@@ -19,28 +18,13 @@
     },
     "windows": [
       {
-        "label": "indicator",
-        "title": "",
-        "url": "/indicator.html",
-        "width": 40,
-        "height": 40,
-        "x": 20,
-        "y": 100,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "visible": true
-      },
-      {
         "label": "settings",
         "title": "ovim Settings",
         "url": "/settings.html",
-        "width": 900,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 800,
+        "width": 820,
+        "height": 680,
+        "minWidth": 720,
+        "minHeight": 560,
         "resizable": true,
         "decorations": true,
         "transparent": false,
@@ -52,7 +36,7 @@
         "title": "Set Up ovim",
         "url": "/permissions.html",
         "width": 560,
-        "height": 500,
+        "height": 420,
         "resizable": false,
         "maximizable": false,
         "minimizable": false,
@@ -60,20 +44,6 @@
         "transparent": false,
         "visible": false,
         "center": true
-      },
-      {
-        "label": "click-overlay",
-        "title": "",
-        "url": "/click-overlay.html",
-        "width": 1920,
-        "height": 1080,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "visible": false,
-        "fullscreen": false
       }
     ],
     "security": {
@@ -83,11 +53,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": [
-      "scripts/*",
-      "scripts/samples/*"
-    ],
-    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -100,12 +65,6 @@
       "exceptionDomain": null,
       "frameworks": [],
       "minimumSystemVersion": "10.15"
-    }
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYzQzY4M0MwMDExOEQ1MEYKUldRUDFSZ0J3SVBHWTdlNTRrTDJVK0t1eVA1TFVBa2RrUzh3ZXZ6Y3gzOVVyWmlnSFdORFNwM0UK",
-      "endpoints": ["https://github.com/tonisives/ovim/releases/latest/download/latest.json"]
     }
   }
 }

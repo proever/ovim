@@ -11,8 +11,7 @@ if (identity === "-") {
 }
 
 let build = spawnSync("pnpm", [
-  "tauri", "build", "--bundles", "app", "--config",
-  JSON.stringify({ bundle: { createUpdaterArtifacts: false } }), "--", "--jobs", "4",
+  "tauri", "build", "--bundles", "app", "--", "--jobs", "4",
 ], { stdio: "inherit", env: { ...process.env, APPLE_SIGNING_IDENTITY: identity } })
 if (build.error) throw build.error
 if (build.status !== 0) process.exit(build.status ?? 1)

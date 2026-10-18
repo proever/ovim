@@ -117,19 +117,6 @@ impl PrewarmManager {
         });
     }
 
-    /// Check if a pre-warmed terminal is available and healthy
-    #[allow(dead_code)]
-    pub fn is_available(&self) -> bool {
-        let state = self.state.lock().unwrap();
-        if let Some(ref s) = *state {
-            if let Some(pid) = s.process_id {
-                return process_alive(pid) && s.socket_path.exists();
-            }
-            return s.socket_path.exists();
-        }
-        false
-    }
-
     /// Clean up the pre-warmed terminal (kill process, remove socket)
     pub fn cleanup(&self) {
         let mut state = self.state.lock().unwrap();
@@ -184,11 +171,9 @@ async fn load_file_via_rpc_async(
     text_is_empty: bool,
 ) -> Result<(), String> {
     use nvim_rs::create::tokio::new_path;
+    use nvim_rs::rpc::handler::Dummy;
 
-    // Simple no-op handler for this one-shot RPC call
-    let handler = super::rpc::BufferHandler::new(Arc::new(|_| {}));
-
-    let (neovim, io_handler) = new_path(socket_path, handler)
+    let (neovim, io_handler) = new_path(socket_path, Dummy::new())
         .await
         .map_err(|e| format!("Failed to connect to prewarm nvim: {}", e))?;
 

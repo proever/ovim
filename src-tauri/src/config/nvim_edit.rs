@@ -4,8 +4,26 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::click_mode::DoubleTapModifier;
-use super::VimKeyModifiers;
+use crate::keyboard::KeyCode;
+
+/// Modifier keys held for the Edit Popup shortcut
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ShortcutModifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub option: bool,
+    pub command: bool,
+}
+
+/// Ctrl+Opt+Cmd+E is free in macOS and common apps. Ctrl+letter and Opt+letter
+/// alone are text editing keys, and Ctrl+Opt+letter is used by window managers.
+const DEFAULT_SHORTCUT_KEY: &str = "e";
+const DEFAULT_SHORTCUT_MODIFIERS: ShortcutModifiers = ShortcutModifiers {
+    shift: false,
+    control: true,
+    option: true,
+    command: true,
+};
 
 /// Supported editor types for Edit Popup
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -77,7 +95,7 @@ pub struct NvimEditSettings {
     /// Keyboard shortcut key (e.g., "e")
     pub shortcut_key: String,
     /// Shortcut modifiers
-    pub shortcut_modifiers: VimKeyModifiers,
+    pub shortcut_modifiers: ShortcutModifiers,
     /// Terminal to use: "alacritty", "iterm", "kitty", "wezterm", "ghostty", "default"
     pub terminal: String,
     /// Path to terminal executable (empty = auto-detect)
@@ -96,20 +114,11 @@ pub struct NvimEditSettings {
     pub popup_width: u32,
     /// Popup window height in pixels
     pub popup_height: u32,
-    /// Enable live sync (BETA) - sync text field as you type in editor
-    #[serde(default)]
-    pub live_sync_enabled: bool,
-    /// Use custom launcher script instead of built-in terminal spawning
-    #[serde(default)]
-    pub use_custom_script: bool,
     /// Use clipboard mode (Cmd+A, Cmd+C/V) instead of smart text field detection
     /// When true, always uses clipboard for text capture/restore
     /// When false (default), uses JavaScript for browsers and accessibility API for native apps
     #[serde(default)]
     pub clipboard_mode: bool,
-    /// Double-tap modifier to activate edit mode (alternative to keyboard shortcut)
-    #[serde(default)]
-    pub double_tap_modifier: DoubleTapModifier,
     /// Pre-warm a hidden terminal at startup for faster edit popup (Alacritty only)
     #[serde(default)]
     pub prewarm_terminal: bool,
@@ -123,13 +132,8 @@ impl Default for NvimEditSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            shortcut_key: "".to_string(), // Disabled by default
-            shortcut_modifiers: VimKeyModifiers {
-                shift: false,
-                control: false,
-                option: false,
-                command: false,
-            },
+            shortcut_key: DEFAULT_SHORTCUT_KEY.to_string(),
+            shortcut_modifiers: DEFAULT_SHORTCUT_MODIFIERS,
             terminal: "alacritty".to_string(),
             terminal_path: "".to_string(), // Empty means auto-detect
             editor: EditorType::default(),
@@ -137,10 +141,7 @@ impl Default for NvimEditSettings {
             popup_mode: true,
             popup_width: 0, // 0 = match text field width
             popup_height: 300,
-            live_sync_enabled: true, // BETA feature, enabled by default
-            use_custom_script: false,
             clipboard_mode: false, // Use smart detection by default
-            double_tap_modifier: DoubleTapModifier::Command, // Cmd+Cmd by default
             prewarm_terminal: false,
             domain_filetypes: HashMap::new(),
         }
@@ -195,6 +196,17 @@ impl NvimEditSettings {
 
     /// Clean up any invalid state (e.g., mismatched paths)
     pub fn sanitize(&mut self) {
+        // The shortcut is the only way to open the popup, so an empty or
+        // unsupported one (the old default was empty) falls back to the default.
+        if KeyCode::from_name(&self.shortcut_key).is_none() {
+            log::warn!(
+                "Shortcut key '{}' is not usable, using the default shortcut",
+                self.shortcut_key
+            );
+            self.shortcut_key = DEFAULT_SHORTCUT_KEY.to_string();
+            self.shortcut_modifiers = DEFAULT_SHORTCUT_MODIFIERS;
+        }
+
         // Check if terminal_path matches terminal type
         if !self.terminal_path.is_empty() && !self.terminal_path_matches_type() {
             log::warn!(
@@ -276,5 +288,41 @@ impl NvimEditSettings {
     /// Get all domain filetypes
     pub fn get_all_domain_filetypes(&self) -> &HashMap<String, String> {
         &self.domain_filetypes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_shortcut_is_ctrl_opt_cmd_e() {
+        let settings = NvimEditSettings::default();
+        assert_eq!(settings.shortcut_key, "e");
+        let ShortcutModifiers { shift, control, option, command } = settings.shortcut_modifiers;
+        assert!(control && option && command && !shift);
+    }
+
+    #[test]
+    fn missing_or_unsupported_shortcut_falls_back_to_default() {
+        for key in ["", "caps_lock"] {
+            let mut settings: NvimEditSettings =
+                serde_yml::from_str(&format!("shortcut_key: '{key}'")).expect("settings");
+            settings.sanitize();
+            assert_eq!(settings.shortcut_key, DEFAULT_SHORTCUT_KEY);
+            assert_eq!(settings.shortcut_modifiers, DEFAULT_SHORTCUT_MODIFIERS);
+        }
+    }
+
+    #[test]
+    fn custom_shortcut_is_kept() {
+        let mut settings: NvimEditSettings = serde_yml::from_str(
+            "shortcut_key: f5\nshortcut_modifiers: {shift: true, control: false, option: false, command: false}",
+        )
+        .expect("settings");
+        settings.sanitize();
+        assert_eq!(settings.shortcut_key, "f5");
+        assert!(settings.shortcut_modifiers.shift);
+        assert!(!settings.shortcut_modifiers.command);
     }
 }

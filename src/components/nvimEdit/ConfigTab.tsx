@@ -1,7 +1,9 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { open } from "@tauri-apps/plugin-dialog"
 import { invoke } from "@tauri-apps/api/core"
-import type { NvimEditSettings, DoubleTapModifier } from "../SettingsApp"
+import { listen } from "@tauri-apps/api/event"
+import type { NvimEditSettings } from "../SettingsApp"
+import { getShortcutError } from "../keyRecording"
 import {
   type PathValidation,
   TERMINAL_OPTIONS,
@@ -90,6 +92,19 @@ export function ConfigTab({
   onShowErrorDialog,
 }: Props) {
   const [showFiletypesModal, setShowFiletypesModal] = useState(false)
+  const [shortcutError, setShortcutError] = useState<string | null>(null)
+
+  useEffect(() => {
+    getShortcutError()
+      .then(setShortcutError)
+      .catch((e) => console.error("Failed to get shortcut status:", e))
+    const unlisten = listen<string | null>("shortcut-error", (event) => {
+      setShortcutError(event.payload)
+    })
+    return () => {
+      unlisten.then((fn) => fn())
+    }
+  }, [])
 
   const handleRemoveFiletype = async (domain: string) => {
     try {
@@ -139,87 +154,25 @@ export function ConfigTab({
       </div>
 
       <div className="form-group">
-        <label>Activation</label>
-        <div className="activation-row">
-          <div className="activation-item">
-            <span className="activation-label">Shortcut</span>
-            <div className="activation-input-group">
-              {nvimEdit.shortcut_key ? (
-                <>
-                  <button
-                    type="button"
-                    className={`current-key clickable${isRecording ? " recording" : ""}`}
-                    onClick={isRecording ? onCancelRecord : onRecordKey}
-                    disabled={!nvimEdit.enabled && !isRecording}
-                  >
-                    {isRecording ? "Press any key..." : displayName || nvimEdit.shortcut_key}
-                  </button>
-                  <button
-                    type="button"
-                    className="activation-clear-btn"
-                    onClick={() => onUpdate({ shortcut_key: "", shortcut_modifiers: { shift: false, control: false, option: false, command: false } })}
-                    disabled={!nvimEdit.enabled}
-                    title="Disable shortcut"
-                  >
-                    x
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className={`current-key clickable placeholder${isRecording ? " recording" : ""}`}
-                  onClick={isRecording ? onCancelRecord : onRecordKey}
-                  disabled={!nvimEdit.enabled && !isRecording}
-                >
-                  {isRecording ? "Press any key..." : "Set shortcut..."}
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="activation-item">
-            <span className="activation-label">Double-tap</span>
-            <div className="activation-input-group">
-              {nvimEdit.double_tap_modifier && nvimEdit.double_tap_modifier !== "none" ? (
-                <>
-                  <select
-                    value={nvimEdit.double_tap_modifier}
-                    onChange={(e) => onUpdate({ double_tap_modifier: e.target.value as DoubleTapModifier })}
-                    disabled={!nvimEdit.enabled}
-                  >
-                    <option value="command">Cmd+Cmd</option>
-                    <option value="option">Opt+Opt</option>
-                    <option value="control">Ctrl+Ctrl</option>
-                    <option value="shift">Shift+Shift</option>
-                    <option value="escape">Esc+Esc</option>
-                  </select>
-                  <button
-                    type="button"
-                    className="activation-clear-btn"
-                    onClick={() => onUpdate({ double_tap_modifier: "none" })}
-                    disabled={!nvimEdit.enabled}
-                    title="Disable double-tap"
-                  >
-                    x
-                  </button>
-                </>
-              ) : (
-                <select
-                  value="none"
-                  onChange={(e) => onUpdate({ double_tap_modifier: e.target.value as DoubleTapModifier })}
-                  disabled={!nvimEdit.enabled}
-                  className="placeholder"
-                >
-                  <option value="none">Set double-tap...</option>
-                  <option value="command">Cmd+Cmd</option>
-                  <option value="option">Opt+Opt</option>
-                  <option value="control">Ctrl+Ctrl</option>
-                  <option value="shift">Shift+Shift</option>
-                  <option value="escape">Esc+Esc</option>
-                </select>
-              )}
-            </div>
-          </div>
+        <label>Shortcut</label>
+        <div>
+          <button
+            type="button"
+            className={`current-key clickable${isRecording ? " recording" : ""}`}
+            onClick={isRecording ? onCancelRecord : onRecordKey}
+            disabled={!nvimEdit.enabled && !isRecording}
+          >
+            {isRecording ? "Press a shortcut..." : displayName || nvimEdit.shortcut_key}
+          </button>
         </div>
+        <span className="hint">
+          {isRecording
+            ? "Include at least one modifier (function keys work alone). Esc cancels."
+            : "Press this in any text field to edit its text. Click to change."}
+        </span>
+        {nvimEdit.enabled && shortcutError && (
+          <div className="alert alert-warning">{shortcutError}</div>
+        )}
       </div>
 
       <div className="form-row editor-row">
@@ -405,59 +358,6 @@ export function ConfigTab({
           Limited support. Please use Alacritty for best performance and tested compatibility.
         </div>
       )}
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={nvimEdit.use_custom_script ?? false}
-            onChange={(e) => onUpdate({ use_custom_script: e.target.checked })}
-            disabled={!nvimEdit.enabled}
-          />
-          Use custom launcher script
-        </label>
-        <span className="hint">
-          Use a script to spawn the editor. Customize PATH, use tmux popups, etc.
-        </span>
-      </div>
-
-      {nvimEdit.use_custom_script && (
-        <div className="form-group">
-          <div className="path-input-row">
-            <button
-              type="button"
-              className="edit-script-btn"
-              onClick={async () => {
-                try {
-                  await invoke("open_launcher_script")
-                } catch (e) {
-                  console.error("Failed to open launcher script:", e)
-                  alert(`Failed to open launcher script: ${e}`)
-                }
-              }}
-              disabled={!nvimEdit.enabled}
-            >
-              Edit Launcher Script
-            </button>
-          </div>
-          <span className="hint">~/Library/Application Support/ovim/terminal-launcher.sh</span>
-        </div>
-      )}
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={nvimEdit.live_sync_enabled}
-            onChange={(e) => onUpdate({ live_sync_enabled: e.target.checked })}
-            disabled={!nvimEdit.enabled}
-          />
-          Live sync text field
-        </label>
-        <span className="hint">
-          Sync changes to the original text field as you type in the editor. Only works with Neovim.
-        </span>
-      </div>
 
       <div className="form-group">
         <label className="checkbox-label">

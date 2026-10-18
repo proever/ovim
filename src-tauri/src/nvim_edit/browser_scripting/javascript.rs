@@ -4,12 +4,8 @@ use std::sync::LazyLock;
 
 // Load JS files at compile time
 const GET_ELEMENT_RECT_JS_SRC: &str = include_str!("js/get_element_rect.js");
-#[allow(dead_code)]
-const GET_CURSOR_POSITION_JS_SRC: &str = include_str!("js/get_cursor_position.js");
 const GET_TEXT_AND_CURSOR_JS_SRC: &str = include_str!("js/get_text_and_cursor.js");
-const PREPARE_BMUX_INPUT_JS_TEMPLATE: &str = include_str!("js/prepare_bmux_input.js");
 const SET_CURSOR_POSITION_JS_TEMPLATE: &str = include_str!("js/set_cursor_position.js");
-const SET_ELEMENT_TEXT_JS_TEMPLATE: &str = include_str!("js/set_element_text.js");
 
 /// Minify JavaScript for AppleScript execution (removes comments and unnecessary whitespace)
 fn minify_js(js: &str) -> String {
@@ -119,9 +115,6 @@ fn is_identifier_char(c: char) -> bool {
 // Pre-minified JS constants (computed once at startup)
 pub static GET_ELEMENT_RECT_JS: LazyLock<String> =
     LazyLock::new(|| minify_js(GET_ELEMENT_RECT_JS_SRC));
-#[allow(dead_code)]
-pub static GET_CURSOR_POSITION_JS: LazyLock<String> =
-    LazyLock::new(|| minify_js(GET_CURSOR_POSITION_JS_SRC));
 pub static GET_TEXT_AND_CURSOR_JS: LazyLock<String> =
     LazyLock::new(|| minify_js(GET_TEXT_AND_CURSOR_JS_SRC));
 
@@ -131,25 +124,6 @@ pub fn build_set_cursor_position_js(line: usize, column: usize) -> String {
         .replace("{{TARGET_LINE}}", &line.to_string())
         .replace("{{TARGET_COL}}", &column.to_string());
     minify_js(&js)
-}
-
-/// JavaScript to set text on the focused element (for live sync in webviews)
-/// Returns "ok_*" on success (may include element ID after colon), error message on failure
-/// If target_element_id is provided, will target that specific element
-pub fn build_set_element_text_js(text: &str, target_element_id: Option<&str>) -> String {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-    let encoded = STANDARD.encode(text.as_bytes());
-    let js = SET_ELEMENT_TEXT_JS_TEMPLATE
-        .replace("{{BASE64_TEXT}}", &encoded)
-        .replace("{{TARGET_ELEMENT_ID}}", target_element_id.unwrap_or(""));
-    minify_js(&js)
-}
-
-pub fn build_prepare_bmux_input_js(target_element_id: Option<&str>, text: &str) -> String {
-    // Minify the template before injecting text, preserving JSON escapes.
-    minify_js(PREPARE_BMUX_INPUT_JS_TEMPLATE)
-        .replace("{{TARGET_ELEMENT_ID}}", target_element_id.unwrap_or(""))
-        .replace("{{NEW_TEXT}}", &serde_json::json!(text).to_string())
 }
 
 #[cfg(test)]
@@ -188,11 +162,7 @@ comment */ var y = 2;"#;
     fn test_templates_compile() {
         // Verify templates load and minify without panic
         let _ = &*GET_ELEMENT_RECT_JS;
-        let _ = &*GET_CURSOR_POSITION_JS;
         let _ = &*GET_TEXT_AND_CURSOR_JS;
         let _ = build_set_cursor_position_js(0, 0);
-        let _ = build_set_element_text_js("test", None);
-        let _ = build_set_element_text_js("test", Some("my-element-id"));
-        let _ = build_prepare_bmux_input_js(Some("my-element-id"), "new text");
     }
 }

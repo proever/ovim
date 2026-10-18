@@ -1,27 +1,21 @@
 //! Ghostty terminal spawner
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
 use super::process_utils::{find_editor_pid_for_file, resolve_command_path};
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 pub struct GhosttySpawner;
 
 impl TerminalSpawner for GhosttySpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::Ghostty
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
         file_path: &str,
         geometry: Option<WindowGeometry>,
         socket_path: Option<&Path>,
-        custom_env: Option<&HashMap<String, String>>,
         editor_context: EditorContext<'_>,
     ) -> Result<SpawnInfo, String> {
         let EditorContext { text_is_empty, filetype } = editor_context;
@@ -109,11 +103,6 @@ impl TerminalSpawner for GhosttySpawner {
         }
         cmd.arg(file_path);
 
-        // Apply custom environment variables
-        if let Some(env) = custom_env {
-            cmd.envs(env.iter());
-        }
-
         cmd.spawn()
             .map_err(|e| format!("Failed to spawn ghostty: {}", e))?;
 
@@ -121,11 +110,6 @@ impl TerminalSpawner for GhosttySpawner {
         let pid = find_editor_pid_for_file(file_path, process_name);
         log::info!("Found editor PID: {:?} for file: {}", pid, file_path);
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::Ghostty,
-            process_id: pid,
-            child: None, // open command returns immediately
-            window_title: Some(unique_title),
-        })
+        Ok(SpawnInfo { process_id: pid })
     }
 }

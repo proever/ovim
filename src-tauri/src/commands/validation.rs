@@ -6,7 +6,6 @@ use std::process::Command;
 use serde::Serialize;
 
 use crate::nvim_edit::terminals::process_utils::{resolve_command_path, resolve_terminal_path};
-use crate::nvim_edit::terminals::ensure_launcher_script;
 
 /// Result of validating terminal and editor paths
 #[derive(Debug, Clone, Serialize)]
@@ -47,18 +46,6 @@ pub fn is_executable(path: &str) -> bool {
 
 /// Check if a terminal can be run (handles AppleScript-based terminals)
 pub fn validate_terminal(terminal_type: &str, terminal_path: &str) -> (bool, String, Option<String>) {
-    // Custom terminal uses a launcher script - always valid if script exists
-    if terminal_type == "custom" {
-        match ensure_launcher_script() {
-            Ok(script_path) => {
-                return (true, script_path.to_string_lossy().to_string(), None);
-            }
-            Err(e) => {
-                return (false, String::new(), Some(format!("Failed to create launcher script: {}", e)));
-            }
-        }
-    }
-
     // iTerm and Terminal.app use AppleScript, so they're always "available" via osascript
     if terminal_type == "iterm" || terminal_type == "default" {
         // Check if the app exists in /Applications

@@ -1,11 +1,10 @@
 //! Terminal.app spawner (macOS default terminal)
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
 use super::process_utils::find_editor_pid_for_file;
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 /// Escape a string for use in shell (single-quote escaping)
@@ -16,17 +15,12 @@ fn shell_escape(s: &str) -> String {
 pub struct TerminalAppSpawner;
 
 impl TerminalSpawner for TerminalAppSpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::Default
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
         file_path: &str,
         geometry: Option<WindowGeometry>,
         socket_path: Option<&Path>,
-        custom_env: Option<&HashMap<String, String>>,
         editor_context: EditorContext<'_>,
     ) -> Result<SpawnInfo, String> {
         let EditorContext { text_is_empty, filetype } = editor_context;
@@ -69,31 +63,15 @@ impl TerminalSpawner for TerminalAppSpawner {
             format!(" {}", escaped_args.join(" "))
         };
 
-        // Build environment export commands for custom env
-        let env_exports = if let Some(env) = custom_env {
-            env.iter()
-                .map(|(k, v)| format!("export {}='{}'", k, v.replace('\'', "'\\''")))
-                .collect::<Vec<_>>()
-                .join("; ")
-        } else {
-            String::new()
-        };
-        let env_prefix = if env_exports.is_empty() {
-            String::new()
-        } else {
-            format!("{}; ", env_exports)
-        };
-
         let script = if let Some(geo) = geometry {
             format!(
                 r#"
             tell application "Terminal"
-                do script "{}{}{} '{}'"
+                do script "{}{} '{}'"
                 set bounds of front window to {{{}, {}, {}, {}}}
                 activate
             end tell
             "#,
-                env_prefix,
                 editor_path,
                 args_str,
                 file_path,
@@ -106,11 +84,11 @@ impl TerminalSpawner for TerminalAppSpawner {
             format!(
                 r#"
             tell application "Terminal"
-                do script "{}{}{} '{}'"
+                do script "{}{} '{}'"
                 activate
             end tell
             "#,
-                env_prefix, editor_path, args_str, file_path
+                editor_path, args_str, file_path
             )
         };
 
@@ -124,11 +102,6 @@ impl TerminalSpawner for TerminalAppSpawner {
         let pid = find_editor_pid_for_file(file_path, process_name);
         log::info!("Found editor PID: {:?} for file: {}", pid, file_path);
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::Default,
-            process_id: pid,
-            child: None,
-            window_title: None,
-        })
+        Ok(SpawnInfo { process_id: pid })
     }
 }
