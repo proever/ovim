@@ -42,7 +42,7 @@
   font-size: 14px;
 }
 
-/* Tab group for In-Place Mode */
+/* Labeled group of tabs */
 .tab-group {
   position: relative;
   display: flex;

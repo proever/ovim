@@ -30,9 +30,8 @@ pub fn set_settings(
     settings.save()?;
     drop(settings);
 
-    crate::apply_activation_policy(&app, new_settings.show_in_dock)?;
     crate::shortcut::register(&app, &new_settings.nvim_edit);
-    Ok(())
+    crate::apply_activation_policy(&app, new_settings.show_in_dock)
 }
 
 #[tauri::command]
