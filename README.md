@@ -34,6 +34,29 @@ you set (`:set ft=markdown`) per website or app.
 - A terminal: [Alacritty](https://alacritty.org) (recommended), Kitty, WezTerm,
   Ghostty, iTerm2 or Terminal.app
 
+## Download a build
+
+CI builds a universal app (Apple Silicon and Intel) for every pull request and
+every push to `main`. Open a run of the
+[CI workflow](https://github.com/proever/ovim/actions/workflows/build-test.yml)
+and download `ovim-macos-universal-dmg` (a DMG) or `ovim-macos-universal-app`
+(a zipped `ovim.app`) from its Artifacts section. **Run workflow** on that page
+starts a build of any branch.
+
+These builds are signed ad hoc and not notarized, so macOS blocks the first
+launch. After moving ovim to Applications, do one of:
+
+- macOS 15 or later: open ovim once, then click **Open Anyway** under System
+  Settings > Privacy & Security.
+- macOS 14 or earlier: Control-click ovim in Applications and choose **Open**.
+- Any version: run `xattr -dr com.apple.quarantine /Applications/ovim.app`, then
+  open it normally.
+
+Downloading with `gh run download <run-id> -R proever/ovim -n ovim-macos-universal-dmg`
+skips the quarantine flag, so none of that is needed. Each build has a new
+signature, so macOS asks for Accessibility again: remove the old ovim entry
+under Privacy & Security > Accessibility and allow the new one.
+
 ## Build and install
 
 You need [Rust](https://rustup.rs) (stable), [Node.js](https://nodejs.org) 18+,
