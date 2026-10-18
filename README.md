@@ -1,140 +1,120 @@
-# ovim
+# ovim (Edit Popup fork)
 
-macOS system-wide Vim keybindings and modal editor.
+Edit any macOS text field in your own Neovim. Press a shortcut, edit with your
+full config and plugins, then `:wq` to paste the result back.
 
-**ovim has two independent editing modes:**
+This is a slimmed-down fork of [tonisives/ovim](https://github.com/tonisives/ovim)
+that keeps only its Edit Popup. The system-wide Vim mode, click and scroll
+modes, the floating indicator and its widgets, the CLI, the AeroSpace and bmux
+integrations, live sync and auto-update are gone.
 
-| In-Place Mode                                                                                                                                          | Edit Popup                                                                                                                                   |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Simulates Vim motions by intercepting keystrokes and injecting native macOS key events. Works instantly in any app. Supports a subset of Vim commands. | Opens your actual Neovim installation in a terminal window with your full config and plugins. Edit complex text, then paste back with `:wq`. |
-| ![c-u-d](docs/images/visual-C-u-d.gif)                                                                                                                 | ![Edit Popup](docs/images/edit-popup.gif)                                                                                                    |
+![Edit Popup](docs/images/edit-popup.gif)
 
-## Features
+## How it works
 
-| Feature           | In-Place Mode                                                            | Edit Popup                               |
-| ----------------- | ------------------------------------------------------------------------ | ---------------------------------------- |
-| Vim support       | Basic motions, operators, text objects ([see list](docs/keybindings.md)) | Full Neovim with all your plugins        |
-| User config       | In app configuration for widgets, ignore list                            | Uses your `~/.config/nvim`               |
-| Speed             | Instant                                                                  | ~500ms (terminal startup)                |
-| App compatibility | All apps (with Accessibility permission)                                 | Apps with Accessibility API or browsers  |
-| Use case          | Quick edits, modal navigation                                            | Complex edits, regex, macros, multi-line |
+1. Focus a text field in any app and press **Ctrl+Opt+Cmd+E** (configurable).
+2. ovim reads the field's text with the Accessibility API. In Safari, Chrome,
+   Edge, Brave and Arc it first asks the page via JavaScript, which also gives
+   the cursor position. If neither works it falls back to Cmd+A, Cmd+C.
+3. Neovim opens in your terminal, in a window placed right below the field
+   (above it if there is no room).
+4. `:wq` pastes the saved text back into the field with Cmd+A, Cmd+V and then
+   restores your clipboard. Quitting without saving (`:q!`, or closing the
+   window) leaves the field untouched.
 
-## Installation
-
-### Homebrew
-
-```bash
-brew install --cask tonisives/tap/ovim
-```
-
-### GitHub Releases
-
-Download the latest `.dmg` from the [Releases](https://github.com/tonisives/ovim/releases) page.
-
-### Build from Source
-
-```bash
-git clone https://github.com/tonisives/ovim.git
-cd ovim
-pnpm install
-pnpm package
-# Signed app installed in build/ovim.app
-```
-
-Requires [Rust](https://rustup.rs/), [Node.js](https://nodejs.org/) v18+, and [pnpm](https://pnpm.io/).
-
-### Package after local merges
-
-The repository includes a tracked `post-merge` hook that builds the macOS app
-from the primary checkout and installs it at `~/workspace/_tools/ovim.app`:
-
-```bash
-pnpm hooks:install
-```
-
-The Git setting is shared with linked worktrees, but merges inside task
-worktrees are skipped. Set `OVIM_OUTPUT_DIR` to choose another installation
-directory, or set `OVIM_SKIP_POST_MERGE_PACKAGE=1` to skip a build for one
-merge. The hook does not restart a running app.
-
-### Keep permissions across local builds
-
-`pnpm package` uses your Developer ID Application certificate and preserves the
-signature during installation. If multiple signing identities are available,
-set `APPLE_SIGNING_IDENTITY` to the certificate name or SHA-1 shown by
-`security find-identity -v -p codesigning`. Certificates with the same name are
-selected by SHA-1 to avoid ambiguous signing requests. Keep using the same
-signing identity, bundle identifier (`com.tonis.ovim`), and installation path.
-The post-merge hook uses this same packaging command.
-
-After switching from an old ad-hoc build, quit Ovim, open the signed build at its
-usual path, and grant Accessibility and Input Monitoring again if requested.
-A manually revoked permission still needs to be granted again. General Settings
-always provides buttons to open both permission panels, even when macOS reports
-access as allowed. Relaunch after changing permissions if the running process
-still reports the old state.
-
-The installer rejects ad-hoc builds rather than replacing a signed installation
-with an identity that changes on every rebuild. Tauri updater keys sign update
-archives; they do not replace an Apple code-signing certificate.
-
-Apple documents the identity mechanism in
-[Code Signing Requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements).
+With Neovim, ovim also puts the cursor where it was in a browser field, moves
+the browser cursor to where you left it in Neovim, and remembers the filetype
+you set (`:set ft=markdown`) per website or app.
 
 ## Requirements
 
-- macOS 10.15 (Catalina) or later
-- **Accessibility permission** - Grant in System Settings > Privacy & Security > Accessibility
-- Terminal app. `Alacritty` is recommended. We also include Kitty, Terminal.app and WezTerm limited support.
+- macOS 10.15 or later
+- [Neovim](https://neovim.io). Vim, Helix or another editor also work, without
+  the cursor and filetype features.
+- A terminal: [Alacritty](https://alacritty.org) (recommended), Kitty, WezTerm,
+  Ghostty, iTerm2 or Terminal.app
 
-## Quick Start
+## Build and install
 
-1. Launch ovim - it appears in your menu bar
-2. Grant Accessibility permission when prompted
-3. Access Settings from the menu bar icon
+You need [Rust](https://rustup.rs) (stable), [Node.js](https://nodejs.org) 18+,
+[pnpm](https://pnpm.io) and the Xcode Command Line Tools
+(`xcode-select --install`).
 
-| In-Place Mode                                                                                   | Edit Popup                                                                                                     |
-| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Press **Caps Lock** to toggle between Normal/Insert modes. Use Vim motions directly in any app. | Assign a shortcut to "Toggle Edit Popup" in Settings. Press it to open Neovim, edit, then `:wq` to paste back. |
+```bash
+git clone https://github.com/proever/ovim.git
+cd ovim
+pnpm install
+pnpm tauri build --bundles app
+cp -R src-tauri/target/release/bundle/macos/ovim.app /Applications/
+```
 
-## In-Place Mode
+The app keeps upstream ovim's bundle identifier (`com.tonis.ovim`) and settings
+folder, so it replaces an installed upstream ovim. Quit that first.
 
-Toggle between Normal and Insert modes with Caps Lock (configurable). In Normal mode, use Vim motions directly in any application.
+### Keep the Accessibility permission across rebuilds
 
-**Supported commands:** `hjkl`, `w/b/e`, `0/$`, `gg/G`, `d/y/c` + motions, `dd/yy/cc`, `x`, `p/P`, `u/Ctrl+r`, Visual mode, counts, and more. See [docs/keybindings.md](docs/keybindings.md) for the full list.
+macOS ties the Accessibility permission to the app's code signature. An
+unsigned build gets a new identity on every rebuild, and you have to remove and
+re-add ovim under System Settings > Privacy & Security > Accessibility each
+time. Signing with a certificate avoids that:
 
-![Indicator Position](docs/images/change-indicator-position.gif)
+```bash
+security find-identity -v -p codesigning   # list your certificates
+APPLE_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" pnpm package
+```
 
-### Widgets
+`pnpm package` builds a signed app, verifies the signature and installs it as
+`build/ovim.app` (set `OVIM_OUTPUT_DIR` to install elsewhere). Any code-signing
+certificate works, including the free "Apple Development" one Xcode creates for
+your Apple ID. Without `APPLE_SIGNING_IDENTITY` it uses your only "Developer ID
+Application" certificate. `pnpm hooks:install` adds a Git hook that runs
+`pnpm package` after merges, installing into `~/workspace/_tools` unless
+`OVIM_OUTPUT_DIR` is set.
 
-Display battery status, time, or selection info
+For development, `pnpm tauri dev` runs the app with live reload of the settings
+window.
 
-## Edit Popup
+## First launch
 
-Opens your actual Neovim installation in a terminal window. Your full config (`~/.config/nvim`) and all plugins are available.
+ovim lives in the menu bar and has no Dock icon by default. On first launch it
+asks for **Accessibility** access, which it needs to read the focused field and
+to send Cmd+A, Cmd+C and Cmd+V. Click Allow and switch ovim on in the list. If
+it isn't listed, drag it in from the helper window.
 
-**How it works:**
+In browsers, macOS asks once per browser whether ovim may control it. Reading
+the page also requires "Allow JavaScript from Apple Events" (Safari: Develop
+menu; Chrome and other Chromium browsers: View > Developer). Without it ovim
+still works through the fallbacks, but without cursor positioning, and
+filetypes are remembered per browser instead of per site.
 
-1. Assign a shortcut to "Toggle Edit Popup" in Settings
-2. Select text in any application (optional - captures existing text)
-3. Press your shortcut to open Neovim in a popup terminal
-4. Edit with your full Neovim setup (plugins, keybindings, macros, etc.)
-5. Type `:wq` to save and paste back, or close the window to cancel
+## Settings
 
-**Supported terminals:** Alacritty, Kitty, WezTerm, iTerm2, Terminal.app
+Open **Settings...** from the menu bar icon, or open ovim again from Finder or
+Spotlight.
 
-Check out [full docs](docs/README.md) and the [official website](https://vim.tonis.dev/)
+- **Shortcut**: click it and press a new combination. It needs at least one
+  modifier, except for function keys. If another app already owns the
+  combination, the settings window says so.
+- **Editor** and **Terminal**: which programs to use, with optional paths for
+  installs that aren't found automatically.
+- **Clipboard mode**: always use Cmd+A, Cmd+C to read the field instead of
+  Accessibility or JavaScript. Try this for apps where capture misbehaves.
+- **Saved filetypes**: review and delete remembered filetypes.
+- **Window**: open as a popup next to the field, with its width and height.
 
-## Issues
+Settings live in `~/Library/Application Support/ovim/settings.yaml`. Setting
+`prewarm_terminal: true` under `nvim_edit` there (Alacritty only) keeps a hidden
+editor running so the popup opens faster. Quit ovim before editing the file by
+hand, since it rewrites the file when settings change.
 
-Please check logs at `/tmp/ovim-rust.log` and submit an [issue](https://github.com/tonisives/ovim/issues)
+## Troubleshooting
 
-## Also by the author
-
-[**ClawTab**](https://clawtab.cc) - Schedule and manage Claude Code agents, shell scripts, and AI jobs from your macOS menu bar. Control everything remotely from your phone.
-
-[![ClawTab](https://clawtab.cc/assets/job-list.png)](https://clawtab.cc)
+Logs are written to `/tmp/ovim-rust.log`. If the shortcut does nothing, check
+that ovim has Accessibility access and look for a shortcut error on the Edit
+Popup > Config tab. If text isn't pasted back, make sure you saved with `:w` or
+`:wq`, and try clipboard mode for that app.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT, see [LICENSE](LICENSE). Based on [ovim](https://github.com/tonisives/ovim)
+by tonisives.
