@@ -535,24 +535,6 @@ fn remove_placeholder_text(
     }
 }
 
-/// Get the AXRole of the currently focused UI element
-pub fn get_focused_element_role() -> Option<String> {
-    let system_wide = CFHandle::new(unsafe { AXUIElementCreateSystemWide() })?;
-    let focused_app = system_wide.get_attribute("AXFocusedApplication")?;
-    let focused_element = focused_app.get_attribute("AXFocusedUIElement")?;
-    let role = focused_element.get_attribute("AXRole")?;
-    role.into_string()
-}
-
-/// Get the AXSubrole of the currently focused UI element (if any)
-pub fn get_focused_element_subrole() -> Option<String> {
-    let system_wide = CFHandle::new(unsafe { AXUIElementCreateSystemWide() })?;
-    let focused_app = system_wide.get_attribute("AXFocusedApplication")?;
-    let focused_element = focused_app.get_attribute("AXFocusedUIElement")?;
-    let subrole = focused_element.get_attribute("AXSubrole")?;
-    subrole.into_string()
-}
-
 /// Get the bounds of the screen containing a given point
 /// Returns the screen frame (x, y, width, height) in screen coordinates
 pub fn get_screen_bounds_for_point(x: f64, y: f64) -> Option<ElementFrame> {
@@ -620,48 +602,6 @@ pub fn get_screen_bounds_for_point(x: f64, y: f64) -> Option<ElementFrame> {
             width: frame.size.width,
             height: frame.size.height,
         })
-    }
-}
-
-/// Set the text value of a UI element
-///
-/// This is used for live text sync - updating the original text field
-/// while the user edits in nvim. Returns Ok(()) if successful, Err otherwise.
-///
-/// Note: This may not work for all apps, especially:
-/// - Web browsers (use JavaScript injection instead)
-/// - Some Electron apps
-/// - Apps that don't properly implement accessibility
-pub fn set_element_text(element: &AXElementHandle, text: &str) -> Result<(), String> {
-    unsafe {
-        let value_attr = CFString::new("AXValue");
-        let cf_text = CFString::new(text);
-
-        let result = AXUIElementSetAttributeValue(
-            element.as_ptr(),
-            value_attr.as_CFTypeRef(),
-            cf_text.as_CFTypeRef(),
-        );
-
-        if result == 0 {
-            Ok(())
-        } else {
-            // Common error codes:
-            // -25200: kAXErrorAttributeUnsupported
-            // -25201: kAXErrorActionUnsupported
-            // -25202: kAXErrorNotificationUnsupported
-            // -25203: kAXErrorNotImplemented
-            // -25204: kAXErrorNotificationAlreadyRegistered
-            // -25205: kAXErrorNotificationNotRegistered
-            // -25206: kAXErrorAPIDisabled
-            // -25207: kAXErrorNoValue
-            // -25208: kAXErrorParameterizedAttributeUnsupported
-            // -25209: kAXErrorNotEnoughPrecision
-            // -25210: kAXErrorIllegalArgument
-            // -25211: kAXErrorCannotComplete
-            // -25212: kAXErrorFailure
-            Err(format!("AXUIElementSetAttributeValue failed with error code: {}", result))
-        }
     }
 }
 

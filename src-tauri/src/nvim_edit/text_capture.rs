@@ -73,12 +73,10 @@ pub fn capture_text_and_frame(
         }
     }
 
-    // JS capture failed - fall back to clipboard mode
-    // IMPORTANT: Clear the browser target since JS-based live sync won't work.
-    // This ensures we use clipboard-based restoration instead of failing JS calls
-    log::info!(
-        "JS capture failed, disabling browser live sync for this session"
-    );
+    // JS capture failed - fall back to accessibility/clipboard capture.
+    // The browser target is dropped: cursor sync and the hostname filetype key
+    // rely on the JavaScript calls that just failed.
+    log::info!("JS capture failed, disabling browser scripting for this session");
 
     // Get element frame from browser scripting (this can still work for positioning)
     let element_frame = if initial_element_frame.is_none() {
@@ -99,77 +97,32 @@ pub fn capture_text_and_frame(
         initial_element_frame
     };
 
-    // Get text from the focused element, tracking whether we used clipboard
-    let (text, _used_clipboard, is_address_bar) = capture_text_content_with_source(app_bundle_id);
-
-    // If we're in a browser's address bar, disable browser live sync
-    // to avoid updating web page elements when editing the URL
-    let effective_browser_target = if browser_target.is_some() && is_address_bar {
-        log::info!(
-            "Browser address bar detected - disabling live sync to avoid updating web content"
-        );
-        None
-    } else {
-        // JS capture failed, so browser-specific live sync is unavailable.
-        None
-    };
-
     CaptureResult {
-        text,
+        text: capture_text_content(app_bundle_id),
         element_frame,
         cursor_position: None,
-        browser_target: effective_browser_target,
+        browser_target: None,
     }
-}
-
-/// Check if the focused element is the browser's address bar (URL field)
-/// Returns true if it's the address bar, false otherwise
-fn is_browser_address_bar() -> bool {
-    let role = accessibility::get_focused_element_role();
-    let subrole = accessibility::get_focused_element_subrole();
-    log::info!("Focused element role: {:?}, subrole: {:?}", role, subrole);
-
-    // Browser address bar: AXTextField with no subrole
-    // Web content text fields: AXTextArea (multiline) or AXTextField with specific subroles
-    //
-    // Reddit comment field: AXTextArea
-    // Chrome/Brave address bar: AXTextField (no subrole)
-    if let Some(r) = &role {
-        if r == "AXTextField" {
-            // AXTextField could be address bar or a web form input
-            // Address bar has no subrole, web inputs often have subroles
-            // For safety, treat AXTextField without subrole as address bar in browsers
-            if subrole.is_none() {
-                return true;
-            }
-        }
-    }
-
-    false
 }
 
 /// Capture text content from the focused element
-/// Returns (text, used_clipboard, is_address_bar)
-fn capture_text_content_with_source(app_bundle_id: &str) -> (String, bool, bool) {
-    // Check if we're in the browser address bar before capturing
-    let is_address_bar = is_browser_address_bar();
-
+fn capture_text_content(app_bundle_id: &str) -> String {
     // An empty AXValue is a valid value for an empty text field. Only fall back
     // to clipboard capture when the accessibility API cannot return a value.
     match accessibility::get_focused_element_text(app_bundle_id) {
         Some(text) => {
             let preview: String = text.lines().take(5).collect::<Vec<_>>().join("\\n");
             log::info!("Got text: {} chars, preview: {}", text.len(), preview);
-            (text, false, is_address_bar)
+            text
         }
         None => {
             log::info!("Accessibility text capture unavailable, trying clipboard-based capture");
             if let Some(captured) = capture_text_via_clipboard() {
                 log::info!("Captured {} chars via clipboard", captured.len());
-                return (captured, true, is_address_bar);
+                return captured;
             }
 
-            (String::new(), false, is_address_bar)
+            String::new()
         }
     }
 }

@@ -21,7 +21,6 @@ export interface NvimEditSettings {
   popup_mode: boolean;
   popup_width: number;
   popup_height: number;
-  live_sync_enabled: boolean;
   clipboard_mode: boolean;
   domain_filetypes: Record<string, string>;
 }

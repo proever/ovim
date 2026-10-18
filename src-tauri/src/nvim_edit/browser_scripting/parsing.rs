@@ -44,19 +44,6 @@ pub fn parse_viewport_frame_json(json: &str) -> Option<ViewportFrame> {
     })
 }
 
-/// Parse cursor position JSON response
-#[allow(dead_code)]
-pub fn parse_cursor_position_json(json: &str) -> Option<CursorPosition> {
-    if json.is_empty() || json == "null" || json == "missing value" {
-        return None;
-    }
-
-    let line = extract_json_number(json, "line")? as usize;
-    let column = extract_json_number(json, "column")? as usize;
-
-    Some(CursorPosition { line, column })
-}
-
 /// Parse text and cursor JSON response
 pub fn parse_text_and_cursor_json(json: &str) -> Option<TextAndCursor> {
     if json.is_empty() || json == "null" || json == "missing value" {

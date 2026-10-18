@@ -93,7 +93,7 @@ pub trait TerminalSpawner {
     /// Spawn a terminal with the configured editor editing the given file
     ///
     /// If `socket_path` is provided, the editor will be started with RPC enabled
-    /// (e.g., nvim --listen <socket_path>) for live buffer sync.
+    /// (e.g., nvim --listen <socket_path>) so ovim can sync the cursor and filetype.
     ///
     /// If `text_is_empty` is true, the editor should start in insert mode.
     ///
@@ -112,7 +112,7 @@ pub trait TerminalSpawner {
 /// Spawn a terminal with the configured editor editing the given file
 ///
 /// If `socket_path` is provided, the editor will be started with RPC enabled
-/// for live buffer sync.
+/// so ovim can sync the cursor and filetype.
 ///
 /// If `text_is_empty` is true, the editor should start in insert mode.
 ///

@@ -1,4 +1,4 @@
-//! Browser scripting via AppleScript to get focused element positions in web browsers
+//! Browser scripting via AppleScript to read the focused element in web browsers
 
 mod applescript;
 mod javascript;
@@ -11,66 +11,12 @@ pub use types::{detect_browser_type, BrowserType, CursorPosition, TextAndCursor}
 use applescript::{
     build_element_rect_script, build_execute_script, execute_applescript, get_browser_window_bounds,
 };
-use javascript::{
-    build_set_cursor_position_js, build_set_element_text_js, GET_CURSOR_POSITION_JS,
-    GET_TEXT_AND_CURSOR_JS,
-};
-use parsing::{parse_cursor_position_json, parse_text_and_cursor_json, parse_viewport_frame_json};
+use javascript::{build_set_cursor_position_js, GET_TEXT_AND_CURSOR_JS};
+use parsing::{parse_text_and_cursor_json, parse_viewport_frame_json};
 use types::viewport_to_element_frame;
 
 fn execute_javascript(browser: BrowserType, js: &str) -> Result<String, String> {
     execute_applescript(&build_execute_script(browser, js))
-}
-
-/// Set text on the focused element in a browser using AppleScript + JavaScript
-/// Returns Ok(Option<element_id>) on success, Err with message on failure
-/// The element_id can be passed to subsequent calls to target the same element
-pub fn set_browser_element_text(
-    browser: BrowserType,
-    text: &str,
-    target_element_id: Option<&str>,
-) -> Result<Option<String>, String> {
-    let js = build_set_element_text_js(text, target_element_id);
-    log::info!(
-        "set_browser_element_text: browser={:?}, text_len={}, target_id={:?}",
-        browser,
-        text.len(),
-        target_element_id
-    );
-    let stdout = execute_javascript(browser, &js)?;
-
-    if stdout.starts_with("ok") {
-        log::info!("Browser text sync succeeded: {}", stdout);
-        // Extract element ID if present (format: "ok_draftjs:element-id")
-        let element_id = stdout
-            .find(':')
-            .map(|colon_pos| stdout[colon_pos + 1..].to_string());
-        Ok(element_id)
-    } else {
-        Err(format!("JavaScript returned: {}", stdout))
-    }
-}
-
-/// Get cursor position from the focused element in a browser
-#[allow(dead_code)]
-pub fn get_browser_cursor_position(browser: BrowserType) -> Option<CursorPosition> {
-    let stdout = match execute_javascript(browser, &GET_CURSOR_POSITION_JS) {
-        Ok(s) => s,
-        Err(e) => {
-            log::info!("get_browser_cursor_position AppleScript failed: {}", e);
-            return None;
-        }
-    };
-
-    log::info!("get_browser_cursor_position raw output: '{}'", stdout);
-
-    let cursor = parse_cursor_position_json(&stdout)?;
-    log::info!(
-        "Got browser cursor position: line={}, col={}",
-        cursor.line,
-        cursor.column
-    );
-    Some(cursor)
 }
 
 /// Set cursor position in the focused element in a browser

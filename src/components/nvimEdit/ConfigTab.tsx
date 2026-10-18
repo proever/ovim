@@ -363,21 +363,6 @@ export function ConfigTab({
         <label className="checkbox-label">
           <input
             type="checkbox"
-            checked={nvimEdit.live_sync_enabled}
-            onChange={(e) => onUpdate({ live_sync_enabled: e.target.checked })}
-            disabled={!nvimEdit.enabled}
-          />
-          Live sync text field
-        </label>
-        <span className="hint">
-          Sync changes to the original text field as you type in the editor. Only works with Neovim.
-        </span>
-      </div>
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
             checked={nvimEdit.clipboard_mode ?? false}
             onChange={(e) => onUpdate({ clipboard_mode: e.target.checked })}
             disabled={!nvimEdit.enabled}

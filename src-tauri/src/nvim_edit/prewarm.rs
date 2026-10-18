@@ -184,11 +184,9 @@ async fn load_file_via_rpc_async(
     text_is_empty: bool,
 ) -> Result<(), String> {
     use nvim_rs::create::tokio::new_path;
+    use nvim_rs::rpc::handler::Dummy;
 
-    // Simple no-op handler for this one-shot RPC call
-    let handler = super::rpc::BufferHandler::new(Arc::new(|_| {}));
-
-    let (neovim, io_handler) = new_path(socket_path, handler)
+    let (neovim, io_handler) = new_path(socket_path, Dummy::new())
         .await
         .map_err(|e| format!("Failed to connect to prewarm nvim: {}", e))?;
 
