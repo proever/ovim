@@ -220,9 +220,8 @@ impl Drop for CFHandle {
 #[derive(Debug, Clone)]
 pub struct FocusContext {
     pub app_pid: i32,
-    #[allow(dead_code)]
     pub app_bundle_id: String,
-    /// The focused UI element (if captured) for live text updates
+    /// The focused UI element (if captured), refocused when the editor closes
     pub focused_element: Option<AXElementHandle>,
 }
 
@@ -258,7 +257,7 @@ pub fn capture_focus_context() -> Option<FocusContext> {
             .to_string_lossy()
             .into_owned();
 
-        // Also try to capture the focused UI element for live text updates
+        // Also capture the focused UI element so focus can return to it
         let focused_element = capture_focused_element();
 
         Some(FocusContext {

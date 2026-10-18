@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::process_utils::{find_editor_pid_for_file, resolve_command_path, resolve_terminal_path};
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 
@@ -87,10 +87,6 @@ impl SpawnConfig {
 }
 
 impl TerminalSpawner for AlacrittySpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::Alacritty
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
@@ -104,7 +100,7 @@ impl TerminalSpawner for AlacrittySpawner {
             .with_geometry(geometry.as_ref());
 
         // Reuse the running application, including positioned popups.
-        let child = self.spawn_window(&config)?;
+        self.spawn_window(&config)?;
 
         // Find editor PID
         let pid = find_editor_pid_for_file(file_path, settings.editor_process_name());
@@ -117,12 +113,7 @@ impl TerminalSpawner for AlacrittySpawner {
             );
         }
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::Alacritty,
-            process_id: pid,
-            child,
-            window_title: Some(config.title),
-        })
+        Ok(SpawnInfo { process_id: pid })
     }
 }
 

@@ -117,19 +117,6 @@ impl PrewarmManager {
         });
     }
 
-    /// Check if a pre-warmed terminal is available and healthy
-    #[allow(dead_code)]
-    pub fn is_available(&self) -> bool {
-        let state = self.state.lock().unwrap();
-        if let Some(ref s) = *state {
-            if let Some(pid) = s.process_id {
-                return process_alive(pid) && s.socket_path.exists();
-            }
-            return s.socket_path.exists();
-        }
-        false
-    }
-
     /// Clean up the pre-warmed terminal (kill process, remove socket)
     pub fn cleanup(&self) {
         let mut state = self.state.lock().unwrap();

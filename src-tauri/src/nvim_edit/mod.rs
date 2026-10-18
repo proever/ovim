@@ -94,7 +94,7 @@ pub fn trigger_nvim_edit(
     // 7. Start edit session (writes temp file, spawns terminal)
     let session_id = manager.start_session(
         focus_context,
-        text.clone(),
+        &text,
         settings.clone(),
         geometry,
         domain_key,

@@ -8,19 +8,16 @@ use uuid::Uuid;
 
 use super::accessibility::FocusContext;
 use super::prewarm::PrewarmManager;
-use super::terminals::{spawn_terminal, SpawnInfo, TerminalType, WindowGeometry};
+use super::terminals::{spawn_terminal, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 /// An active edit session
+#[derive(Clone)]
 pub struct EditSession {
-    pub id: Uuid,
     pub focus_context: FocusContext,
-    pub original_text: String,
     pub temp_file: PathBuf,
     pub file_mtime: SystemTime,
-    pub terminal_type: TerminalType,
     pub process_id: Option<u32>,
-    pub window_title: Option<String>,
     /// Socket path for RPC communication with nvim
     pub socket_path: PathBuf,
     /// Domain key for filetype persistence (browser hostname or app bundle ID)
@@ -50,7 +47,7 @@ impl EditSessionManager {
     pub fn start_session(
         &self,
         focus_context: FocusContext,
-        text: String,
+        text: &str,
         settings: NvimEditSettings,
         geometry: Option<WindowGeometry>,
         domain_key: String,
@@ -74,7 +71,7 @@ impl EditSessionManager {
         let _ = std::fs::remove_file(&socket_path);
 
         // Write text to temp file
-        std::fs::write(&temp_file, &text)
+        std::fs::write(&temp_file, text)
             .map_err(|e| format!("Failed to write temp file: {}", e))?;
 
         // Get file modification time after writing
@@ -86,7 +83,7 @@ impl EditSessionManager {
         let text_is_empty = text.trim().is_empty();
 
         // Try the pre-warmed terminal path first
-        let (terminal_type, process_id, window_title) =
+        let process_id =
             if let Some(ref prewarm) = self.prewarm {
                 if let Some((prewarm_socket, prewarm_pid, prewarm_title)) = prewarm.try_claim() {
                     log::info!("Using pre-warmed terminal: {}", prewarm_title);
@@ -129,14 +126,10 @@ impl EditSessionManager {
 
                             // Override socket_path for this session
                             let session = EditSession {
-                                id: session_id,
                                 focus_context,
-                                original_text: text,
                                 temp_file,
                                 file_mtime,
-                                terminal_type: TerminalType::Alacritty,
                                 process_id: prewarm_pid,
-                                window_title: Some(prewarm_title),
                                 socket_path: actual_socket,
                                 domain_key,
                             };
@@ -159,14 +152,10 @@ impl EditSessionManager {
 
         // Create session
         let session = EditSession {
-            id: session_id,
             focus_context,
-            original_text: text,
             temp_file,
             file_mtime,
-            terminal_type,
             process_id,
-            window_title,
             socket_path,
             domain_key,
         };
@@ -178,7 +167,7 @@ impl EditSessionManager {
         Ok(session_id)
     }
 
-    /// Normal terminal spawn (non-prewarm path)
+    /// Normal terminal spawn (non-prewarm path), returns the editor PID if found
     fn normal_spawn(
         &self,
         settings: &NvimEditSettings,
@@ -187,31 +176,14 @@ impl EditSessionManager {
         socket_path: &std::path::Path,
         text_is_empty: bool,
         saved_filetype: Option<&str>,
-    ) -> Result<(TerminalType, Option<u32>, Option<String>), String> {
-        let SpawnInfo {
-            terminal_type,
-            process_id,
-            child: _,
-            window_title,
-        } = spawn_terminal(settings, temp_file, geometry, Some(socket_path), text_is_empty, saved_filetype)?;
-        Ok((terminal_type, process_id, window_title))
+    ) -> Result<Option<u32>, String> {
+        let spawn_info = spawn_terminal(settings, temp_file, geometry, Some(socket_path), text_is_empty, saved_filetype)?;
+        Ok(spawn_info.process_id)
     }
 
     /// Get a session by ID
     pub fn get_session(&self, id: &Uuid) -> Option<EditSession> {
-        let sessions = self.sessions.lock().unwrap();
-        sessions.get(id).map(|s| EditSession {
-            id: s.id,
-            focus_context: s.focus_context.clone(),
-            original_text: s.original_text.clone(),
-            temp_file: s.temp_file.clone(),
-            file_mtime: s.file_mtime,
-            terminal_type: s.terminal_type.clone(),
-            process_id: s.process_id,
-            window_title: s.window_title.clone(),
-            socket_path: s.socket_path.clone(),
-            domain_key: s.domain_key.clone(),
-        })
+        self.sessions.lock().unwrap().get(id).cloned()
     }
 
     /// Remove a session after completion

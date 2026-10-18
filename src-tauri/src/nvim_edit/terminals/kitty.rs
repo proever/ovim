@@ -4,16 +4,12 @@ use std::path::Path;
 use std::process::Command;
 
 use super::process_utils::{find_editor_pid_for_file, resolve_command_path, resolve_terminal_path};
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 pub struct KittySpawner;
 
 impl TerminalSpawner for KittySpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::Kitty
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
@@ -96,19 +92,13 @@ impl TerminalSpawner for KittySpawner {
         }
         cmd.arg(file_path);
 
-        let child = cmd
-            .spawn()
+        cmd.spawn()
             .map_err(|e| format!("Failed to spawn kitty: {}", e))?;
 
         // Wait a bit for editor to start, then find its PID by the file it's editing
         let pid = find_editor_pid_for_file(file_path, process_name);
         log::info!("Found editor PID: {:?} for file: {}", pid, file_path);
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::Kitty,
-            process_id: pid,
-            child: Some(child),
-            window_title: Some(unique_title),
-        })
+        Ok(SpawnInfo { process_id: pid })
     }
 }

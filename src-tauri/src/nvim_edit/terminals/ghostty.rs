@@ -4,16 +4,12 @@ use std::path::Path;
 use std::process::Command;
 
 use super::process_utils::{find_editor_pid_for_file, resolve_command_path};
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 pub struct GhosttySpawner;
 
 impl TerminalSpawner for GhosttySpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::Ghostty
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
@@ -114,11 +110,6 @@ impl TerminalSpawner for GhosttySpawner {
         let pid = find_editor_pid_for_file(file_path, process_name);
         log::info!("Found editor PID: {:?} for file: {}", pid, file_path);
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::Ghostty,
-            process_id: pid,
-            child: None, // open command returns immediately
-            window_title: Some(unique_title),
-        })
+        Ok(SpawnInfo { process_id: pid })
     }
 }

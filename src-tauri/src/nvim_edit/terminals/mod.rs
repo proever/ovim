@@ -21,7 +21,6 @@ pub use wezterm::WezTermSpawner;
 
 use crate::config::NvimEditSettings;
 use std::path::Path;
-use std::process::Child;
 
 /// Window position and size for popup mode
 #[derive(Debug, Clone, Default)]
@@ -54,27 +53,12 @@ impl TerminalType {
             _ => TerminalType::Default,
         }
     }
-
-    #[allow(dead_code)]
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            TerminalType::Alacritty => "alacritty",
-            TerminalType::Ghostty => "ghostty",
-            TerminalType::Kitty => "kitty",
-            TerminalType::WezTerm => "wezterm",
-            TerminalType::ITerm => "iterm",
-            TerminalType::Default => "default",
-        }
-    }
 }
 
 /// Spawn info returned after launching terminal
 pub struct SpawnInfo {
-    pub terminal_type: TerminalType,
+    /// PID of the editor (or of a terminal process that exits with it)
     pub process_id: Option<u32>,
-    #[allow(dead_code)]
-    pub child: Option<Child>,
-    pub window_title: Option<String>,
 }
 
 /// Editor state that influences terminal startup behavior.
@@ -86,10 +70,6 @@ pub struct EditorContext<'a> {
 
 /// Trait for terminal spawners
 pub trait TerminalSpawner {
-    /// The terminal type this spawner handles
-    #[allow(dead_code)]
-    fn terminal_type(&self) -> TerminalType;
-
     /// Spawn a terminal with the configured editor editing the given file
     ///
     /// If `socket_path` is provided, the editor will be started with RPC enabled

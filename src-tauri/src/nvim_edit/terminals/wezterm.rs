@@ -5,16 +5,12 @@ use std::process::Command;
 
 use super::applescript_utils::set_window_size;
 use super::process_utils::{resolve_command_path, resolve_terminal_path};
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 pub struct WezTermSpawner;
 
 impl TerminalSpawner for WezTermSpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::WezTerm
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
@@ -106,11 +102,6 @@ impl TerminalSpawner for WezTermSpawner {
             });
         }
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::WezTerm,
-            process_id: Some(wezterm_pid),
-            child: Some(child),
-            window_title: None,
-        })
+        Ok(SpawnInfo { process_id: Some(wezterm_pid) })
     }
 }

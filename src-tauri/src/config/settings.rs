@@ -7,8 +7,6 @@ use super::nvim_edit::NvimEditSettings;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
-    /// Launch at login
-    pub launch_at_login: bool,
     /// Show in menu bar
     pub show_in_menu_bar: bool,
     /// Show the application icon in the macOS Dock
@@ -20,7 +18,6 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            launch_at_login: false,
             show_in_menu_bar: true,
             show_in_dock: false,
             nvim_edit: NvimEditSettings::default(),

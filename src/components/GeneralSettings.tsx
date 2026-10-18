@@ -33,17 +33,6 @@ export function GeneralSettings({ settings, onUpdate }: Props) {
         <label className="checkbox-label">
           <input
             type="checkbox"
-            checked={settings.launch_at_login}
-            onChange={(e) => onUpdate({ launch_at_login: e.target.checked })}
-          />
-          Launch ovim at login
-        </label>
-      </div>
-
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
             checked={settings.show_in_dock}
             onChange={(e) => onUpdate({ show_in_dock: e.target.checked })}
           />

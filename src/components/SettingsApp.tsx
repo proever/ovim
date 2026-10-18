@@ -26,7 +26,6 @@ export interface NvimEditSettings {
 }
 
 export interface Settings {
-  launch_at_login: boolean;
   show_in_menu_bar: boolean;
   show_in_dock: boolean;
   nvim_edit: NvimEditSettings;

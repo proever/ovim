@@ -1,7 +1,7 @@
 [package]
 name = "ovim-rust"
 version = "0.1.0"
-description = "System-wide Vim mode for macOS"
+description = "Edit any macOS text field in Neovim"
 authors = ["tonis"]
 edition = "2021"
 default-run = "ovim-rust"
@@ -21,12 +21,12 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0"
 
-# macOS frameworks for keyboard capture
-core-graphics = { version = "0.25", features = ["highsierra"] }
+# macOS frameworks for synthesized key presses and accessibility
+core-graphics = "0.25"
 core-foundation = "0.10"
 
-# Async runtime
-tokio = { version = "1", features = ["sync", "rt", "net", "io-util", "macros"] }
+# Async runtime for the Neovim RPC connection
+tokio = { version = "1", features = ["rt", "time", "net", "io-util"] }
 
 # Neovim RPC for cursor placement and filetype tracking
 nvim-rs = { version = "0.9", features = ["use_tokio"] }
@@ -35,10 +35,6 @@ nvim-rs = { version = "0.9", features = ["use_tokio"] }
 log = "0.4"
 env_logger = "0.11"
 chrono = "0.4"
-
-# Error handling
-thiserror = "2"
-anyhow = "1"
 
 # Directories
 dirs = "6"

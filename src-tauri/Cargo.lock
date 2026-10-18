@@ -2503,7 +2503,6 @@ dependencies = [
 name = "ovim-rust"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "chrono",
  "cocoa",
  "core-foundation",
@@ -2521,7 +2520,6 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-global-shortcut",
- "thiserror 2.0.17",
  "tokio",
  "uuid",
 ]

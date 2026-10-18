@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::Command;
 
 use super::process_utils::find_editor_pid_for_file;
-use super::{EditorContext, SpawnInfo, TerminalSpawner, TerminalType, WindowGeometry};
+use super::{EditorContext, SpawnInfo, TerminalSpawner, WindowGeometry};
 use crate::config::NvimEditSettings;
 
 /// Escape a string for use in shell (single-quote escaping)
@@ -15,10 +15,6 @@ fn shell_escape(s: &str) -> String {
 pub struct ITermSpawner;
 
 impl TerminalSpawner for ITermSpawner {
-    fn terminal_type(&self) -> TerminalType {
-        TerminalType::ITerm
-    }
-
     fn spawn(
         &self,
         settings: &NvimEditSettings,
@@ -113,11 +109,6 @@ impl TerminalSpawner for ITermSpawner {
         let pid = find_editor_pid_for_file(file_path, process_name);
         log::info!("Found editor PID: {:?} for file: {}", pid, file_path);
 
-        Ok(SpawnInfo {
-            terminal_type: TerminalType::ITerm,
-            process_id: pid,
-            child: None,
-            window_title: None,
-        })
+        Ok(SpawnInfo { process_id: pid })
     }
 }
