@@ -9,6 +9,11 @@ use crate::nvim_edit::terminals::ensure_launcher_script;
 use crate::AppState;
 
 #[tauri::command]
+pub fn get_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+#[tauri::command]
 pub fn get_settings(state: State<AppState>) -> Settings {
     let settings = state.settings.lock().unwrap();
     settings.clone()

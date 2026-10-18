@@ -119,9 +119,6 @@ pub struct Settings {
     /// Settings for Scroll Mode feature (Vimium-style navigation)
     #[serde(default)]
     pub scroll_mode: ScrollModeSettings,
-    /// Enable automatic update checking
-    #[serde(default = "default_true")]
-    pub auto_update_enabled: bool,
     /// User-defined shell script widgets
     #[serde(default)]
     pub shell_widgets: Vec<ShellWidgetConfig>,
@@ -169,7 +166,6 @@ impl Default for Settings {
             nvim_edit: NvimEditSettings::default(),
             click_mode: ClickModeSettings::default(),
             scroll_mode: ScrollModeSettings::default(),
-            auto_update_enabled: true,
             shell_widgets: vec![],
         }
     }

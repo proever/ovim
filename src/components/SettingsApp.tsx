@@ -120,7 +120,6 @@ export interface Settings {
   nvim_edit: NvimEditSettings;
   click_mode: ClickModeSettings;
   scroll_mode: ScrollModeSettings;
-  auto_update_enabled: boolean;
   shell_widgets: ShellWidgetConfig[];
 }
 

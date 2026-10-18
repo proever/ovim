@@ -51,17 +51,6 @@ export function GeneralSettings({ settings, onUpdate }: Props) {
         </label>
       </div>
 
-      <div className="form-group">
-        <label className="checkbox-label">
-          <input
-            type="checkbox"
-            checked={settings.auto_update_enabled}
-            onChange={(e) => onUpdate({ auto_update_enabled: e.target.checked })}
-          />
-          Automatically check for updates
-        </label>
-      </div>
-
     </div>
   )
 }

@@ -87,7 +87,6 @@
       "scripts/*",
       "scripts/samples/*"
     ],
-    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -100,12 +99,6 @@
       "exceptionDomain": null,
       "frameworks": [],
       "minimumSystemVersion": "10.15"
-    }
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYzQzY4M0MwMDExOEQ1MEYKUldRUDFSZ0J3SVBHWTdlNTRrTDJVK0t1eVA1TFVBa2RrUzh3ZXZ6Y3gzOVVyWmlnSFdORFNwM0UK",
-      "endpoints": ["https://github.com/tonisives/ovim/releases/latest/download/latest.json"]
     }
   }
 }

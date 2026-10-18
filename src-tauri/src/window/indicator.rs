@@ -28,30 +28,6 @@ pub fn setup_indicator_window(window: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
-/// Set whether the indicator window ignores mouse events
-pub fn set_indicator_ignores_mouse(window: &WebviewWindow, ignore: bool) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    #[allow(deprecated)] // cocoa crate is deprecated, but objc2-app-kit migration is future work
-    {
-        use cocoa::base::id;
-
-        let ns_window = window.ns_window().map_err(|e| e.to_string())? as id;
-
-        unsafe {
-            use objc::*;
-            let _: () = msg_send![ns_window, setIgnoresMouseEvents: ignore];
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = window;
-        let _ = ignore;
-    }
-
-    Ok(())
-}
-
 /// Set up the click overlay window with special properties
 pub fn setup_click_overlay_window(window: &WebviewWindow) -> Result<(), String> {
     #[cfg(target_os = "macos")]
