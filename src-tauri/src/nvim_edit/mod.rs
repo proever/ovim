@@ -20,11 +20,11 @@ use std::thread;
 use std::time::Duration;
 
 /// Trigger the "Edit with Neovim" flow
-/// `shared_settings` is optional - if provided, filetype changes will update the in-memory state
+/// `shared_settings` receives the filetype nvim ends up with, so it is remembered for the field
 pub fn trigger_nvim_edit(
     manager: Arc<EditSessionManager>,
     settings: NvimEditSettings,
-    shared_settings: Option<Arc<Mutex<Settings>>>,
+    shared_settings: Arc<Mutex<Settings>>,
 ) -> Result<(), String> {
     // 1. Capture focus context (which app we're in)
     let focus_context =
@@ -398,7 +398,7 @@ fn spawn_completion_handler(
     live_sync_worked: Arc<AtomicBool>,
     browser_target: Option<browser_scripting::BrowserType>,
     clipboard_mode: bool,
-    shared_settings: Option<Arc<Mutex<Settings>>>,
+    shared_settings: Arc<Mutex<Settings>>,
 ) {
     thread::spawn(move || {
         let Some(session) = manager.get_session(&session_id) else {
@@ -421,20 +421,11 @@ fn spawn_completion_handler(
                 session.domain_key
             );
 
-            // Update in-memory settings if we have shared state
-            if let Some(ref shared) = shared_settings {
-                let mut settings = shared.lock().unwrap();
-                settings
-                    .nvim_edit
-                    .set_filetype_for_domain(session.domain_key.clone(), ft.clone());
-                log::info!("Updated in-memory settings with filetype");
-            } else {
-                // Fallback: just save to file (will be loaded on next restart)
-                let mut settings = Settings::load();
-                settings
-                    .nvim_edit
-                    .set_filetype_for_domain(session.domain_key.clone(), ft.clone());
-            }
+            shared_settings
+                .lock()
+                .unwrap()
+                .nvim_edit
+                .set_filetype_for_domain(session.domain_key.clone(), ft.clone());
         }
 
         log::info!("Nvim exited, restoring focus");

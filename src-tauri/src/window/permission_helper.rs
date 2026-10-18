@@ -2,7 +2,7 @@
 #[allow(deprecated)]
 mod macos {
     use std::ffi::CString;
-    use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
     use std::sync::OnceLock;
 
     use cocoa::base::{id, nil};
@@ -26,16 +26,12 @@ mod macos {
     const NS_DRAG_OPERATION_COPY: usize = 1;
     const PANEL_WIDTH: f64 = 280.0;
     const PANEL_HEIGHT: f64 = 238.0;
-    const PERMISSION_NONE: u8 = 0;
-    const PERMISSION_ACCESSIBILITY: u8 = 1;
-    const PERMISSION_INPUT_MONITORING: u8 = 2;
 
     static DRAG_VIEW_CLASS: OnceLock<usize> = OnceLock::new();
     static FOLLOWER_CLASS: OnceLock<usize> = OnceLock::new();
     static FOLLOWER_STARTED: AtomicBool = AtomicBool::new(false);
     static HELPER_PANEL: AtomicPtr<Object> = AtomicPtr::new(std::ptr::null_mut());
-    static HELPER_TITLE: AtomicPtr<Object> = AtomicPtr::new(std::ptr::null_mut());
-    static ACTIVE_PERMISSION: AtomicU8 = AtomicU8::new(PERMISSION_NONE);
+    static HELPER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
@@ -116,13 +112,9 @@ mod macos {
             return;
         }
 
-        let permission_granted = match ACTIVE_PERMISSION.load(Ordering::Acquire) {
-            PERMISSION_ACCESSIBILITY => crate::keyboard::check_accessibility_permission(),
-            PERMISSION_INPUT_MONITORING => crate::keyboard::check_input_monitoring_permission(),
-            _ => false,
-        };
-        if permission_granted {
-            ACTIVE_PERMISSION.store(PERMISSION_NONE, Ordering::Release);
+        if HELPER_ACTIVE.load(Ordering::Acquire) && crate::keyboard::check_accessibility_permission()
+        {
+            HELPER_ACTIVE.store(false, Ordering::Release);
             unsafe {
                 let _: () = msg_send![panel, orderOut: nil];
             }
@@ -308,7 +300,6 @@ mod macos {
         let _: () = msg_send![content_view, addSubview: arrow];
         let _: () = msg_send![content_view, addSubview: drag_view];
 
-        HELPER_TITLE.store(title, Ordering::Release);
         Ok(panel)
     }
 
@@ -456,7 +447,7 @@ mod macos {
         Ok(())
     }
 
-    pub fn show(permission_name: &str) -> Result<(), String> {
+    pub fn show() -> Result<(), String> {
         unsafe {
             let app_url = installed_app_url()?;
             let mut panel = HELPER_PANEL.load(Ordering::Acquire);
@@ -464,19 +455,7 @@ mod macos {
                 panel = create_panel(app_url)?;
                 HELPER_PANEL.store(panel, Ordering::Release);
             }
-
-            let title = HELPER_TITLE.load(Ordering::Acquire);
-            if !title.is_null() {
-                let title_text = format!("{permission_name} permission");
-                let _: () = msg_send![title, setStringValue: ns_string(&title_text)?];
-            }
-
-            let active_permission = match permission_name {
-                "Accessibility" => PERMISSION_ACCESSIBILITY,
-                "Input Monitoring" => PERMISSION_INPUT_MONITORING,
-                _ => PERMISSION_NONE,
-            };
-            ACTIVE_PERMISSION.store(active_permission, Ordering::Release);
+            HELPER_ACTIVE.store(true, Ordering::Release);
 
             position_panel(panel);
             start_following_settings()?;
@@ -486,7 +465,7 @@ mod macos {
     }
 
     pub fn hide() {
-        ACTIVE_PERMISSION.store(PERMISSION_NONE, Ordering::Release);
+        HELPER_ACTIVE.store(false, Ordering::Release);
         let panel = HELPER_PANEL.load(Ordering::Acquire);
         if !panel.is_null() {
             unsafe {
@@ -497,8 +476,8 @@ mod macos {
 }
 
 #[cfg(target_os = "macos")]
-pub fn show_permission_drag_helper(permission_name: &str) -> Result<(), String> {
-    macos::show(permission_name)
+pub fn show_permission_drag_helper() -> Result<(), String> {
+    macos::show()
 }
 
 #[cfg(target_os = "macos")]
@@ -507,7 +486,7 @@ pub fn hide_permission_drag_helper() {
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn show_permission_drag_helper(_permission_name: &str) -> Result<(), String> {
+pub fn show_permission_drag_helper() -> Result<(), String> {
     Ok(())
 }
 

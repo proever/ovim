@@ -11,28 +11,12 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "macOSPrivateApi": true,
     "trayIcon": {
       "id": "main",
       "iconPath": "icons/tray-icon.png",
       "iconAsTemplate": true
     },
     "windows": [
-      {
-        "label": "indicator",
-        "title": "",
-        "url": "/indicator.html",
-        "width": 40,
-        "height": 40,
-        "x": 20,
-        "y": 100,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "visible": true
-      },
       {
         "label": "settings",
         "title": "ovim Settings",

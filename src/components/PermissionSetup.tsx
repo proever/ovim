@@ -3,8 +3,6 @@ import { invoke } from "@tauri-apps/api/core"
 
 export type PermissionStatus = {
   accessibility: boolean
-  input_monitoring: boolean
-  capture_running: boolean
 }
 
 type PermissionSetupProps = {
@@ -29,7 +27,7 @@ export let PermissionSetup = ({ onboarding = false }: PermissionSetupProps) => {
   }, [])
 
   useEffect(() => {
-    if (!onboarding || completionStarted || !permissionStatus?.accessibility || !permissionStatus.input_monitoring) {
+    if (!onboarding || completionStarted || !permissionStatus?.accessibility) {
       return
     }
 
@@ -45,11 +43,6 @@ export let PermissionSetup = ({ onboarding = false }: PermissionSetupProps) => {
     invoke("open_accessibility_settings").catch((error) => setErrorMessage(String(error)))
   }
 
-  let handleAllowInputMonitoring = () => {
-    setErrorMessage("")
-    invoke("open_input_monitoring_settings").catch((error) => setErrorMessage(String(error)))
-  }
-
   if (!permissionStatus) {
     return <div className="permission-loading">Checking permissions...</div>
   }
@@ -60,7 +53,7 @@ export let PermissionSetup = ({ onboarding = false }: PermissionSetupProps) => {
         <div className="permission-copy">
           <div className="permission-name">Accessibility</div>
           <div className="permission-description">
-            Lets ovim read focused controls and move between interface elements.
+            Lets ovim read the focused text field and paste your edits back into it.
           </div>
         </div>
         {permissionStatus.accessibility ? (
@@ -72,27 +65,6 @@ export let PermissionSetup = ({ onboarding = false }: PermissionSetupProps) => {
           </>
         ) : (
           <button type="button" className="permission-allow" onClick={handleAllowAccessibility}>
-            Allow
-          </button>
-        )}
-      </div>
-
-      <div className="permission-card">
-        <div className="permission-copy">
-          <div className="permission-name">Input Monitoring</div>
-          <div className="permission-description">
-            Lets ovim respond to keyboard shortcuts across your Mac.
-          </div>
-        </div>
-        {permissionStatus.input_monitoring ? (
-          <>
-            <span className="permission-allowed">Allowed</span>
-            <button type="button" className="permission-allow" onClick={handleAllowInputMonitoring}>
-              Settings
-            </button>
-          </>
-        ) : (
-          <button type="button" className="permission-allow" onClick={handleAllowInputMonitoring}>
             Allow
           </button>
         )}

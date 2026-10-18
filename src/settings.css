@@ -5,17 +5,10 @@
 @import "./styles/tabs.css";
 @import "./styles/sections.css";
 @import "./styles/forms.css";
-@import "./styles/sliders.css";
-@import "./styles/position.css";
-@import "./styles/widgets.css";
-@import "./styles/app-list.css";
 @import "./styles/key-selector.css";
 @import "./styles/alerts.css";
 @import "./styles/buttons.css";
 @import "./styles/permissions.css";
-@import "./styles/colors.css";
-@import "./styles/fonts.css";
 @import "./styles/badges.css";
 @import "./styles/dialogs.css";
-@import "./styles/activation.css";
 @import "./styles/misc.css";

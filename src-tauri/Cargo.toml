@@ -14,9 +14,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
-tauri-plugin-opener = "2"
+tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yml = "0.0"
@@ -43,9 +43,6 @@ anyhow = "1"
 
 # Directories
 dirs = "6"
-
-# Image decoding for tray icons
-image = "0.25"
 
 # UUID for session IDs
 uuid = { version = "1", features = ["v4"] }

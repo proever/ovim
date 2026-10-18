@@ -4,19 +4,13 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::VimKeyModifiers;
-
-/// Double-tap key options for activating the Edit Popup
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum DoubleTapModifier {
-    #[default]
-    None,
-    Command,
-    Option,
-    Control,
-    Shift,
-    Escape,
+/// Modifier keys held for the Edit Popup shortcut
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct ShortcutModifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub option: bool,
+    pub command: bool,
 }
 
 /// Supported editor types for Edit Popup
@@ -89,7 +83,7 @@ pub struct NvimEditSettings {
     /// Keyboard shortcut key (e.g., "e")
     pub shortcut_key: String,
     /// Shortcut modifiers
-    pub shortcut_modifiers: VimKeyModifiers,
+    pub shortcut_modifiers: ShortcutModifiers,
     /// Terminal to use: "alacritty", "iterm", "kitty", "wezterm", "ghostty", "default"
     pub terminal: String,
     /// Path to terminal executable (empty = auto-detect)
@@ -116,9 +110,6 @@ pub struct NvimEditSettings {
     /// When false (default), uses JavaScript for browsers and accessibility API for native apps
     #[serde(default)]
     pub clipboard_mode: bool,
-    /// Double-tap modifier to activate edit mode (alternative to keyboard shortcut)
-    #[serde(default)]
-    pub double_tap_modifier: DoubleTapModifier,
     /// Pre-warm a hidden terminal at startup for faster edit popup (Alacritty only)
     #[serde(default)]
     pub prewarm_terminal: bool,
@@ -133,12 +124,7 @@ impl Default for NvimEditSettings {
         Self {
             enabled: true,
             shortcut_key: "".to_string(), // Disabled by default
-            shortcut_modifiers: VimKeyModifiers {
-                shift: false,
-                control: false,
-                option: false,
-                command: false,
-            },
+            shortcut_modifiers: ShortcutModifiers::default(),
             terminal: "alacritty".to_string(),
             terminal_path: "".to_string(), // Empty means auto-detect
             editor: EditorType::default(),
@@ -148,7 +134,6 @@ impl Default for NvimEditSettings {
             popup_height: 300,
             live_sync_enabled: true, // BETA feature, enabled by default
             clipboard_mode: false, // Use smart detection by default
-            double_tap_modifier: DoubleTapModifier::Command, // Cmd+Cmd by default
             prewarm_terminal: false,
             domain_filetypes: HashMap::new(),
         }
