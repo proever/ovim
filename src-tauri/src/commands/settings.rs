@@ -23,7 +23,10 @@ pub fn set_settings(
     new_settings: Settings,
 ) -> Result<(), String> {
     let mut settings = state.settings.lock().unwrap();
+    // Saved filetypes live in their own file and are never deserialized from the window.
+    let domain_filetypes = std::mem::take(&mut settings.nvim_edit.domain_filetypes);
     *settings = new_settings.clone();
+    settings.nvim_edit.domain_filetypes = domain_filetypes;
     settings.save()?;
     drop(settings);
 
