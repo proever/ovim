@@ -132,6 +132,9 @@ jobs:
             target: 'x86_64-apple-darwin'
 
     runs-on: macos-latest
+    env:
+      # Forks without the Apple secrets get an ad hoc signed, unnotarized DMG.
+      HAS_SIGNING_SECRETS: ${{ secrets.APPLE_CERTIFICATE != '' && secrets.APPLE_SIGNING_IDENTITY != '' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -146,7 +149,7 @@ jobs:
         id: find-app
         run: |
           APP_PATH=$(find bundle -name "*.app" -type d | head -1)
-          echo "app_path=$APP_PATH" >> $GITHUB_OUTPUT
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
           echo "Found app at: $APP_PATH"
 
       - name: Fix executable permissions
@@ -154,12 +157,14 @@ jobs:
           chmod +x "${{ steps.find-app.outputs.app_path }}/Contents/MacOS/"*
 
       - name: Import Code-Signing Certificates
+        if: env.HAS_SIGNING_SECRETS == 'true'
         uses: Apple-Actions/import-codesign-certs@v2
         with:
           p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
           p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
 
       - name: List signing identities
+        if: env.HAS_SIGNING_SECRETS == 'true'
         run: |
           echo "=== Available signing identities ==="
           security find-identity -v -p codesigning
@@ -167,6 +172,7 @@ jobs:
           echo "=== Looking for identity: ${{ secrets.APPLE_SIGNING_IDENTITY }} ==="
 
       - name: Sign the app
+        if: env.HAS_SIGNING_SECRETS == 'true'
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
@@ -178,7 +184,14 @@ jobs:
           echo "Verifying signature..."
           codesign --verify --deep --strict "${{ steps.find-app.outputs.app_path }}"
 
+      - name: Sign the app ad hoc
+        if: env.HAS_SIGNING_SECRETS != 'true'
+        run: |
+          codesign --deep --force --sign - "${{ steps.find-app.outputs.app_path }}"
+          codesign --verify --deep --strict "${{ steps.find-app.outputs.app_path }}"
+
       - name: Notarize the app
+        if: env.HAS_SIGNING_SECRETS == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -214,6 +227,7 @@ jobs:
             "${{ steps.find-app.outputs.app_path }}"
 
       - name: Sign DMG
+        if: env.HAS_SIGNING_SECRETS == 'true'
         env:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
